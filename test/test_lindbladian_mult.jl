@@ -7,6 +7,7 @@ using Random
 using Plots
 using Arpack
 using LinearMaps
+using BenchmarkTools
 
 @testset "Lindbladian mul!" begin
     Random.seed!(1234)

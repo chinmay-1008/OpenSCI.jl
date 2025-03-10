@@ -3,6 +3,7 @@ using OpenSCI
 using Test
 using LinearAlgebra
 using Printf
+using Random
 
 @testset "Pauli Evolve" begin
     Random.seed!(1234)
