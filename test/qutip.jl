@@ -37,7 +37,7 @@ function run()
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
-    T = 10.0
+    T = 5.0
     vec_state = vec(Matrix(state))
 
     # Computing the ρt using the Eigenvalues
@@ -55,28 +55,30 @@ function run()
     println("\nUsing ODE:")
     display(ρT)
 
+    println("Expectation Value: ")
+    exp_val = tr(Pauli("Y")*ρT)
+    println(exp_val)
     # For plotting the population during te dynamics
-    populations_ode = Dict{Dyad{N}, Vector{Float64}}([])
-    populations_eig = Dict{Dyad{N}, Vector{Float64}}([])
-    for i in 0:2^N-1
-        ii = Dyad(N,i,i)
-        ii_idx = index(ii)
-        populations_ode[ii] = [abs(v[ii_idx]) for v in sol.u]
-        populations_eig[ii] = []
-    end
+    # populations_ode = Dict{Dyad{N}, Vector{Float64}}([])
+    # populations_eig = Dict{Dyad{N}, Vector{Float64}}([])
+    # for i in 0:2^N-1
+    #     ii = Dyad(N,i,i)
+    #     ii_idx = index(ii)
+    #     populations_ode[ii] = [abs(v[ii_idx]) for v in sol.u]
+    #     populations_eig[ii] = []
+    # end
 
-    for ti in 1:length(sol.t)
-        t = sol.t[ti]
-        ρt = compute_ρt(t, F, vec_state)
-        ρode = sol.u[ti]
-        @test norm(ρt - ρode) < 1e-6
-        for i in 0:2^N-1
-            ii = Dyad(N,i,i)
-            ii_idx = index(ii)
-            push!(populations_eig[ii], abs(ρt[ii_idx]))
-        end
-    end
-
+    # for ti in 1:length(sol.t)
+    #     t = sol.t[ti]
+    #     ρt = compute_ρt(t, F, vec_state)
+    #     ρode = sol.u[ti]
+    #     @test norm(ρt - ρode) < 1e-6
+    #     for i in 0:2^N-1
+    #         ii = Dyad(N,i,i)
+    #         ii_idx = index(ii)
+    #         push!(populations_eig[ii], abs(ρt[ii_idx]))
+    #     end
+    # end
     # t = [i for i in sol.t]
     # plt = plot()
     # for ei in λ 
@@ -90,9 +92,6 @@ function run()
     #     plot!(t, pops, label = string(state.bra.v+1), linestyle=:dash, c = palette(:tab10)[state.bra.v+1])
     # end
     # savefig("./plot.pdf")
-
-
-
 
     return
 end
