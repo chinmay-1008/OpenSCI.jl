@@ -56,13 +56,23 @@ function todense(sdv::SparseDyadVectors{N,T}) where {N,T}
     return out
 end
 
+# function Base.display(ps::SparseDyadVectors)
+#     for (key,val) in ps
+#         @printf(" %12s ", key)
+#         for s in 1:length(val)
+#             @printf(" %12.8f +%12.8fi", real(val[s]), imag(val[s]))
+#         end
+#         @printf("\n")
+#     end
+# end
+
 function Base.display(ps::SparseDyadVectors)
-    for (key,val) in ps
-        @printf(" %12s ", key)
-        for s in 1:length(val)
-            @printf(" %12.8f +%12.8fi", real(val[s]), imag(val[s]))
+    for (key, val) in ps
+        @printf("%12s ", string(key))  # Ensure key is converted to string for proper formatting
+        for s in eachindex(val)
+            @printf("%12.8f + %12.8fi ", real(val[s]), imag(val[s]))
         end
-        @printf("\n")
+        println()  # Move to the next line for better readability
     end
 end
 
