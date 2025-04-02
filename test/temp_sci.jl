@@ -14,6 +14,15 @@ function compute_ρt(t, F, ρ0::Vector)
     return v * Diagonal(exp.(λ*t)) * w * ρ0
 end
 
+function compute_ρt_ss(t, Fe, Fv, ρ0::Vector)
+        
+    w = pinv(Fv)
+    v = Fv
+    λ = Fe
+    println(size(w), " ", size(v), " ", size(λ))
+    return v * Diagonal(exp.(λ*t)) * w * ρ0
+end
+
 function matrix_to_dyad(mat_p)
     n, m = size(mat_p)
     N = Int(log2(n))
@@ -37,7 +46,7 @@ function run()
     # Initializing the Lindbladian
     L = Lindbladian(N)
     add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
-    add_channel_dephasing!(L, .1)
+    add_channel_dephasing!(L, .3)
     add_channel_depolarizing!(L, .1)
     println("Lindbladian: ")
     display(L)
@@ -61,14 +70,17 @@ function run()
     end
     sci_val = []
     eig_val = []
+    eig_val_ss = []
+
     R_1 = 0
     # display(F.vectors[:, 7])
-    ops = Pauli(N, Z = [1])
+    ops = Pauli(N, Z = [1,2])
+    ops += Pauli(N, Z = [2,3])
 
     # Using the SCI formalism
 
     v0 = DyadSum(Dyad(N,0,0))
-    v0 = SparseDyadVectors(v0, R = 2)
+    v0 = SparseDyadVectors(v0, R = 3)
     final_state = selected_ci(L, v0, max_iter_outer=10)
 
     # display(final_state)
@@ -114,13 +126,23 @@ function run()
     # println("\n eigen decomposition")
     # display(vi * Diagonal(exp.(ei*T)) * wi)
 
-    
+   
+    nkeep = 2 
     time_step = [i for i in 1:10]
+    Fss_values = F.values[end-nkeep:end]
+    Fss_vectors = F.vectors[:,end-nkeep:end]
+    mat_vi = Matrix(todense(vi))
+    display(size(mat_vi))
+    display(ei)
+
+    @show norm(mat_vi[:,end] - Fss_vectors[:,end])
+    display(mat_vi' * Fss_vectors)
 
     for T in time_step
 
         # ρt = compute_ρt(T, F, vec_state_i)
-        ρt = compute_ρt(T, Matrix(todense(vi)), vec_state_i)
+        ρt = compute_ρt(T, F, vec_state_i)
+        # ρt = compute_ρt(T, Matrix(todense(vi)), vec_state_i)
         ρt = reshape(ρt, (dim, dim))
 
         # @printf(" State after time T:\n")
@@ -131,6 +153,9 @@ function run()
 
         # display(F.vectors)
 
+        ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
+        ρtss = reshape(ρtss, (dim, dim))
+        exp_eigss = tr(Matrix(ops)*ρtss)
  
         println("============================================================")
 
@@ -172,9 +197,10 @@ function run()
 
         push!(sci_val, abs(out))
         push!(eig_val, abs(exp_eig))
+        push!(eig_val_ss, abs(exp_eigss))
     end
 
-    plot(time_step, [sci_val,eig_val], label = ["SCI" "Eig"])
+    plot(time_step, [sci_val,eig_val,eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
     title!("Expectation value of Z_1 using SCI(R = $R_1) and Eigendecomposition of L for N=$N", titlefontsize = 8)
     savefig("test/sci_vs_eig_$N-r_$R_1.pdf")
     return
