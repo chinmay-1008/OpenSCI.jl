@@ -7,7 +7,7 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
     verbose = 0) where {N,T}
 
     dim, R = size(v)
-    display(v)
+    # display(v)
     # @show size(v)
     last = deepcopy(v)
 
