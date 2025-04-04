@@ -4,6 +4,8 @@ using LinearAlgebra
 using DifferentialEquations
 using Plots
 using Printf
+using OrderedCollections
+
 
 function compute_ρt(t, F, ρ0::Vector)
         
@@ -19,7 +21,10 @@ function compute_ρt_ss(t, Fe, Fv, ρ0::Vector)
     w = pinv(Fv)
     v = Fv
     λ = Fe
-    println(size(w), " ", size(v), " ", size(λ))
+    # println(size(w), " ", size(v), " ", size(λ))
+    # display(v)
+    # display(w)
+    # display(v * Diagonal(exp.(λ*t)) * w)
     return v * Diagonal(exp.(λ*t)) * w * ρ0
 end
 
@@ -39,8 +44,18 @@ function matrix_to_dyad(mat_p)
     return dyad_pauli  
 end
 
+function pinv_sparsedyads(dyad_dict)
+    
+    dyad_keys = collect(keys(dyad_dict))  
+    values_matrix = transpose(hcat(collect(values(dyad_dict))...)) 
+    pinv_matrix = pinv(values_matrix)
+    pinv_dict = OrderedDict(dyad_keys[i] => vec(pinv_matrix[:, i]) for i in eachindex(dyad_keys))
+    
+    return pinv_dict
+end
+
 function run()
-    N = 4
+    N = 2
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -54,11 +69,12 @@ function run()
     Lmat = Matrix(L)
     # println("Matrix Form of L: ")
     # display(Lmat)
+    println("Diagonalization started")
     F = eigen(Lmat)
 
     state = DyadSum(Dyad(N, 0, 0))
     vec_state_i = vec(Matrix(state))
-
+    # display(vec_state_i)
     # Sort Eigenvalues by real part
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
@@ -72,15 +88,20 @@ function run()
     eig_val = []
     eig_val_ss = []
 
-    R_1 = 0
+    # R_1 = 0
     # display(F.vectors[:, 7])
-    ops = Pauli(N, Z = [1,2])
-    ops += Pauli(N, Z = [2,3])
+    ops = Pauli(N, Z = [1, 2])
+    # ops += Pauli(N, Z = [2,3])
+    mat_ops = Matrix(ops)
+    d_ops = matrix_to_dyad(mat_ops)
 
+    # return 
     # Using the SCI formalism
+    nkeep = 3
 
-    v0 = DyadSum(Dyad(N,0,0))
-    v0 = SparseDyadVectors(v0, R = 3)
+    # v0 = DyadSum(Dyad(N,0,0))
+    v0 = SparseDyadVectors(state, R = nkeep)
+    println("SCI started")
     final_state = selected_ci(L, v0, max_iter_outer=10)
 
     # display(final_state)
@@ -110,33 +131,29 @@ function run()
     vi_f = F_sci.vectors
     ei = ei[end-R_1+1:end]
     vi_f = vi_f[:, end-R_1+1:end]
+    
+    states_sci = [reshape(Matrix(todense(final_state))[:, i], 2^N, 2^N)/sqrt(2^N) for i in 1:nkeep]
+    @printf(" Eigenvalues of L SCI:\n")
+    for i in 1:nkeep
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
+    end
+    # return
     # display(ei)
-    # display(vi_f)
     # vi = todense(final_state)
     # wi = pinv(vi)
     vi = final_state
-    wi = vi
-    # println("Matrix form of State")
+    wi = pinv_sparsedyads(vi)
+
+    # println("State")
     # display(vi)
 
     # println("\n Inverse of State")
-    # display(wi)
-    # Here the pinv is same as the input so i am just taking the complex conjugate of the coeff
+    # display(norm(Matrix(wi)[:, 3]))
+    # return
 
-    # println("\n eigen decomposition")
-    # display(vi * Diagonal(exp.(ei*T)) * wi)
-
-   
-    nkeep = 2 
-    time_step = [i for i in 1:10]
-    Fss_values = F.values[end-nkeep:end]
-    Fss_vectors = F.vectors[:,end-nkeep:end]
     mat_vi = Matrix(todense(vi))
-    display(size(mat_vi))
-    display(ei)
 
-    @show norm(mat_vi[:,end] - Fss_vectors[:,end])
-    display(mat_vi' * Fss_vectors)
+    time_step = [i for i in 1:10]
 
     for T in time_step
 
@@ -144,63 +161,75 @@ function run()
         ρt = compute_ρt(T, F, vec_state_i)
         # ρt = compute_ρt(T, Matrix(todense(vi)), vec_state_i)
         ρt = reshape(ρt, (dim, dim))
+        println("============================================================")
 
+        display(tr(ρt))
         # @printf(" State after time T:\n")
-        # display(ρt)
+        display(ρt)
         # println("Expectation Value")
-        exp_eig = tr(Matrix(ops)*ρt)
+        exp_eig = tr(mat_ops*ρt)
         # display(exp_eig)
 
         # display(F.vectors)
 
         ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
-        ρtss = reshape(ρtss, (dim, dim))
-        exp_eigss = tr(Matrix(ops)*ρtss)
- 
-        println("============================================================")
+        # display(ρtss)
+        ρtss = reshape(ρtss, (dim, dim))/sqrt(2^N)
+        # display(mat_ops * ρtss)
+        exp_eigss = tr(mat_ops*ρtss)
+        display(tr(ρtss))
+        display(ρtss)
 
+        println("============================================================")
+        # return
         # display(ops*final_state)
-        d_ops = matrix_to_dyad(Matrix(ops))
-        out = 0
+        out_n = 0
         # display(d_ops * Dyad(N, 1, 0))
+        # display(vi)
+        # display(state)
         for m in 1:R_1
             for (state_v, coeff_v) in vi
                 if haskey(d_ops, state_v)
-                    ovi = d_ops[state_v]' * coeff_v[m]
+                    ovi = (d_ops[state_v])' * coeff_v[m]
+                    # println("OVI ", d_ops[state_v])
+                    # display(ovi)
                 else
                     ovi = 0
                 end
                 # println("OVI")
                 # display(ovi)
 
-                if haskey(state, state_v)
-                    wir = wi[state_v][m]' * state[state_v]
+                if haskey(v0, state_v)
+                    wir = wi[state_v][m]' * v0[state_v][m]
+                    # println("WIR")
+                    # display(wir) 
+
                 else
                     wir = 0
                 end
                 # println("WIR")
                 # display(wir)
-                out += (ovi * wir * exp(ei[m]*T))
-                # println("OUT ", out, " ", exp(ei[m]*T))
+                out_n += (ovi * wir * exp(ei[m]*T))
+                # println("OUT ", out_n, " ", exp(ei[m]*T))
                 # display(out)
             end 
         end 
         println("Time: ", T)
         println("\n Exp Value using SCI")
-        display(out)
+        display(out_n)
         println("\n Exp Value using Eigen Values")
         display(exp_eig)
+        println("\n Exp Value using SCI Dense")
+        display(exp_eigss)
+        display(abs(exp_eig) / abs(out_n))
+        # return
 
-        # Computing the ρt using the Eigenvalues
-        # ρt = compute_ρt(T, F_sci, final_vec_state)
-        # println(size(Matrix(Pauli(N, Y = [1]))), " ", size(ρt))
-
-        push!(sci_val, abs(out))
+        push!(sci_val, abs(out_n) )
         push!(eig_val, abs(exp_eig))
         push!(eig_val_ss, abs(exp_eigss))
     end
 
-    plot(time_step, [sci_val,eig_val,eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
+    plot(time_step, [sci_val, eig_val, eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
     title!("Expectation value of Z_1 using SCI(R = $R_1) and Eigendecomposition of L for N=$N", titlefontsize = 8)
     savefig("test/sci_vs_eig_$N-r_$R_1.pdf")
     return

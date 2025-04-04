@@ -42,18 +42,18 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
         v = zeros(T,size(Pv))
         # println(size(Lmat)," ", size(L))
         # display(Lmat)
-        if length(Pv) < 300
-            e,v = eigen(Lmat)
-            # println("VEC")
-            # display(v)
-            e = e[end-R+1:end]
-            # println("MOD VEC")
-            v = v[:, end-R+1:end]
-            # display(v)
+        # if length(Pv) < 300
+        e,v = eigen(Lmat)
+        # println("VEC")
+        # display(v)
+        e = e[end-R+1:end]
+        # println("MOD VEC")
+        v = v[:, end-R+1:end]
+        # display(v)
 
-        else
-            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=500)
-        end
+        # else
+            # e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=500)
+        # end
         # println("\nState")
         # display(Pv)
         # println("\n Fill State")
