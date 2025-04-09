@@ -55,7 +55,7 @@ function pinv_sparsedyads(dyad_dict)
 end
 
 function run()
-    N = 4
+    N = 5
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -228,9 +228,9 @@ function run()
         push!(eig_val, abs(exp_eig))
         push!(eig_val_ss, abs(exp_eigss))
     end
-
+    s_ops = string(ops)
     plot(time_step, [sci_val, eig_val, eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
-    title!("Expectation value of Z_1 using SCI(R = $R_1) and Eigendecomposition of L for N=$N", titlefontsize = 8)
+    title!("Expectation value of $s_ops using SCI(R = $R_1) and Eigendecomposition of L for N=$N", titlefontsize = 8)
     savefig("test/sci_vs_eig_$N-r_$R_1.pdf")
     return
 end
