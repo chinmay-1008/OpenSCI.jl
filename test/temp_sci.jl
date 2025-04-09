@@ -53,9 +53,14 @@ function pinv_sparsedyads(dyad_dict)
     
     return pinv_dict
 end
-
+# N R ratio_1 ratio_inf
+# 2 3 4 4
+# 3 3 2.938 2.859
+# 4 3 2.829 2.799
+# 5 3 3.324 3.299
+# 6 3 4.393 4.494
 function run()
-    N = 5
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -146,7 +151,9 @@ function run()
 
     # println("State")
     # display(vi)
-
+    # println("Eigenvectors")
+    # display(vi_f)
+    # return
     # println("\n Inverse of State")
     # display(norm(Matrix(wi)[:, 3]))
     # return
@@ -163,9 +170,9 @@ function run()
         ρt = reshape(ρt, (dim, dim))
         println("============================================================")
 
-        display(tr(ρt))
+        # display(tr(ρt))
         # @printf(" State after time T:\n")
-        display(ρt)
+        # display(ρt)
         # println("Expectation Value")
         exp_eig = tr(mat_ops*ρt)
         # display(exp_eig)
@@ -173,13 +180,15 @@ function run()
         # display(F.vectors)
 
         ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
-        # display(ρtss)
+        # ρtss = compute_ρt_ss(T, ei, mat_vi, Vector(Matrix(todense(v0))))
+
+        display(typeof(ρtss))
         ρtss = reshape(ρtss, (dim, dim))#/sqrt(2^N)
         # display(mat_ops * ρtss)
         exp_eigss = tr(mat_ops*ρtss)
         display(tr(ρtss))
         display(ρtss)
-
+        return
         println("============================================================")
         # return
         # display(ops*final_state)
@@ -214,6 +223,7 @@ function run()
                 # display(out)
             end 
         end 
+        out_n = out_n
         println("Time: ", T)
         println("\n Exp Value using SCI")
         display(out_n)
@@ -224,7 +234,7 @@ function run()
         display(abs(exp_eig) / abs(out_n))
         # return
 
-        push!(sci_val, abs(out_n) )
+        push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
         push!(eig_val_ss, abs(exp_eigss))
     end
