@@ -55,7 +55,7 @@ function pinv_sparsedyads(dyad_dict)
 end
 
 function run()
-    N = 2
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -174,7 +174,7 @@ function run()
 
         ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
         # display(ρtss)
-        ρtss = reshape(ρtss, (dim, dim))/sqrt(2^N)
+        ρtss = reshape(ρtss, (dim, dim))#/sqrt(2^N)
         # display(mat_ops * ρtss)
         exp_eigss = tr(mat_ops*ρtss)
         display(tr(ρtss))
