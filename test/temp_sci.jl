@@ -44,15 +44,30 @@ function matrix_to_dyad(mat_p)
     return dyad_pauli  
 end
 
-function pinv_sparsedyads(dyad_dict)
+# function pinv_sparsedyads(dyad_dict)
     
-    dyad_keys = collect(keys(dyad_dict))  
-    values_matrix = transpose(hcat(collect(values(dyad_dict))...)) 
-    pinv_matrix = pinv(values_matrix)
-    pinv_dict = OrderedDict(dyad_keys[i] => vec(pinv_matrix[:, i]) for i in eachindex(dyad_keys))
+#     dyad_keys = collect(keys(dyad_dict))  
+#     values_matrix = transpose(hcat(collect(values(dyad_dict))...)) 
+#     pinv_matrix = pinv(values_matrix)
+#     pinv_dict = OrderedDict(dyad_keys[i] => vec(pinv_matrix[:, i]) for i in eachindex(dyad_keys))
     
-    return pinv_dict
+#     return pinv_dict
+# end
+
+function pinv_sparsedyads(dyad_dict::SparseDyadVectors{N,T})::SparseDyadVectors{N,T} where {N,T}
+    dyad_keys = collect(keys(dyad_dict))                            
+    values_matrix = transpose(hcat(values(dyad_dict)...))           
+
+    pinv_matrix = pinv(values_matrix)                              
+
+    pinv_sdv = OrderedDict{DyadBasis{N}, Vector{T}}()
+    for i in eachindex(dyad_keys)
+        pinv_sdv[dyad_keys[i]] = vec(pinv_matrix[:, i])           
+    end
+
+    return pinv_sdv
 end
+
 # N R ratio_1 ratio_inf
 # 2 3 4 4
 # 3 3 2.938 2.859
@@ -60,13 +75,13 @@ end
 # 5 3 3.324 3.299
 # 6 3 4.393 4.494
 function run()
-    N = 4
+    N = 2
     dim = 2^N
 
     # Initializing the Lindbladian
     L = Lindbladian(N)
     add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
-    add_channel_dephasing!(L, .3)
+    add_channel_dephasing!(L, .6)
     add_channel_depolarizing!(L, .1)
     println("Lindbladian: ")
     display(L)
@@ -77,7 +92,7 @@ function run()
     println("Diagonalization started")
     F = eigen(Lmat)
 
-    state = DyadSum(Dyad(N, 0, 0))
+    state = DyadSum(Dyad(N, dim-1, dim-1))
     vec_state_i = vec(Matrix(state))
     # display(vec_state_i)
     # Sort Eigenvalues by real part
@@ -150,9 +165,10 @@ function run()
     wi = pinv_sparsedyads(vi)
 
     # println("State")
-    # display(vi)
-    # println("Eigenvectors")
-    # display(vi_f)
+    # display(Matrix(vi)[:, 1])
+    # println("Pinv State")
+    # display(transpose(Matrix(wi)[:, 1]))
+    # display((transpose(Matrix(wi)[:, 1]))*(Matrix(vi)[:, 2]))
     # return
     # println("\n Inverse of State")
     # display(norm(Matrix(wi)[:, 3]))
@@ -170,7 +186,7 @@ function run()
         ρt = reshape(ρt, (dim, dim))
         println("============================================================")
 
-        # display(tr(ρt))
+        display(tr(ρt))
         # @printf(" State after time T:\n")
         # display(ρt)
         # println("Expectation Value")
@@ -182,25 +198,27 @@ function run()
         ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
         # ρtss = compute_ρt_ss(T, ei, mat_vi, Vector(Matrix(todense(v0))))
 
-        display(typeof(ρtss))
+        # display(typeof(ρtss))
         ρtss = reshape(ρtss, (dim, dim))#/sqrt(2^N)
         # display(mat_ops * ρtss)
         exp_eigss = tr(mat_ops*ρtss)
         display(tr(ρtss))
-        display(ρtss)
-        return
+        # display(ρtss)
+        # return
         println("============================================================")
         # return
         # display(ops*final_state)
         out_n = 0
-        # display(d_ops * Dyad(N, 1, 0))
+        # display(d_ops)
         # display(vi)
-        # display(state)
+        # display(v0)
+        display(vi.keys)
+        return
         for m in 1:R_1
             for (state_v, coeff_v) in vi
                 if haskey(d_ops, state_v)
                     ovi = (d_ops[state_v])' * coeff_v[m]
-                    # println("OVI ", d_ops[state_v])
+                    # println("OVI ")
                     # display(ovi)
                 else
                     ovi = 0
@@ -209,7 +227,7 @@ function run()
                 # display(ovi)
 
                 if haskey(v0, state_v)
-                    wir = wi[state_v][m]' * v0[state_v][m]
+                    wir = (wi[state_v][m]) * v0[state_v][m]
                     # println("WIR")
                     # display(wir) 
 
@@ -219,8 +237,8 @@ function run()
                 # println("WIR")
                 # display(wir)
                 out_n += (ovi * wir * exp(ei[m]*T))
-                # println("OUT ", out_n, " ", exp(ei[m]*T))
-                # display(out)
+                # println("OUT ")
+                # display(out_n)
             end 
         end 
         out_n = out_n
@@ -237,6 +255,7 @@ function run()
         push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
         push!(eig_val_ss, abs(exp_eigss))
+        # return
     end
     s_ops = string(ops)
     plot(time_step, [sci_val, eig_val, eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
