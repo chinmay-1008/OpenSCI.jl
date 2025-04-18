@@ -68,6 +68,17 @@ function pinv_sparsedyads(dyad_dict::SparseDyadVectors{N,T})::SparseDyadVectors{
     return pinv_sdv
 end
 
+function expectation_sparse(vi, wi, d_ops, v0, ei, t, R)
+    expval = 0.0
+    for m in 1:R
+        ovi = sum(conj(d_ops[d]) * vi[d][m] for d in keys(vi) if haskey(d_ops,d))
+        wir = sum(conj(wi[d][m]) * v0[d][1] for d in keys(wi) if haskey(v0,d))
+        expval += exp(ei[m]*t) * ovi * wir
+    end
+    return expval
+end
+
+
 # N R ratio_1 ratio_inf
 # 2 3 4 4
 # 3 3 2.938 2.859
@@ -75,7 +86,7 @@ end
 # 5 3 3.324 3.299
 # 6 3 4.393 4.494
 function run()
-    N = 2
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -208,40 +219,36 @@ function run()
         println("============================================================")
         # return
         # display(ops*final_state)
-        out_n = 0
-        # display(d_ops)
-        # display(vi)
-        # display(v0)
-        display(vi.keys)
-        return
-        for m in 1:R_1
-            for (state_v, coeff_v) in vi
-                if haskey(d_ops, state_v)
-                    ovi = (d_ops[state_v])' * coeff_v[m]
-                    # println("OVI ")
-                    # display(ovi)
-                else
-                    ovi = 0
-                end
-                # println("OVI")
-                # display(ovi)
+        out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
 
-                if haskey(v0, state_v)
-                    wir = (wi[state_v][m]) * v0[state_v][m]
-                    # println("WIR")
-                    # display(wir) 
+        # for m in 1:R_1
+        #     for (state_v, coeff_v) in vi
+        #         if haskey(d_ops, state_v)
+        #             ovi = (d_ops[state_v])' * coeff_v[m]
+        #             # println("OVI ")
+        #             # display(ovi)
+        #         else
+        #             ovi = 0
+        #         end
+        #         # println("OVI")
+        #         # display(ovi)
 
-                else
-                    wir = 0
-                end
-                # println("WIR")
-                # display(wir)
-                out_n += (ovi * wir * exp(ei[m]*T))
-                # println("OUT ")
-                # display(out_n)
-            end 
-        end 
-        out_n = out_n
+        #         if haskey(v0, state_v)
+        #             wir = (wi[state_v][m]) * v0[state_v][m]
+        #             # println("WIR")
+        #             # display(wir) 
+
+        #         else
+        #             wir = 0
+        #         end
+        #         # println("WIR")
+        #         # display(wir)
+        #         out_n += (ovi * wir * exp(ei[m]*T))
+        #         # println("OUT ")
+        #         # display(out_n)
+        #     end 
+        # end 
+        # out_n = out_n
         println("Time: ", T)
         println("\n Exp Value using SCI")
         display(out_n)
@@ -254,7 +261,7 @@ function run()
 
         push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
-        push!(eig_val_ss, abs(exp_eigss))
+        push!(eig_val_ss, abs(0))
         # return
     end
     s_ops = string(ops)
