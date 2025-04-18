@@ -7,25 +7,27 @@ using Printf
 using OrderedCollections
 
 
-function compute_ρt(t, F, ρ0::Vector)
+function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
         
     w = inv(F.vectors)
     v = F.vectors
     λ = F.values
+    ρt = v * Diagonal(exp.(λ*t)) * w * ρ0
+    ρt = reshape(ρt, (dim, dim))
+    exp_eig = tr(mat_ops*ρt)
 
-    return v * Diagonal(exp.(λ*t)) * w * ρ0
+    return exp_eig
 end
 
-function compute_ρt_ss(t, Fe, Fv, ρ0::Vector)
+function compute_ρt_ss_exp(t, Fe, Fv, ρ0::Vector, mat_ops, dim)
         
     w = pinv(Fv)
     v = Fv
     λ = Fe
-    # println(size(w), " ", size(v), " ", size(λ))
-    # display(v)
-    # display(w)
-    # display(v * Diagonal(exp.(λ*t)) * w)
-    return v * Diagonal(exp.(λ*t)) * w * ρ0
+    ρt_ss = v * Diagonal(exp.(λ*t)) * w * ρ0
+    ρtss = reshape(ρtss, (dim, dim))
+    exp_eigss = tr(mat_ops*ρtss)
+    return exp_eigss
 end
 
 function matrix_to_dyad(mat_p)
@@ -43,16 +45,6 @@ function matrix_to_dyad(mat_p)
     end  
     return dyad_pauli  
 end
-
-# function pinv_sparsedyads(dyad_dict)
-    
-#     dyad_keys = collect(keys(dyad_dict))  
-#     values_matrix = transpose(hcat(collect(values(dyad_dict))...)) 
-#     pinv_matrix = pinv(values_matrix)
-#     pinv_dict = OrderedDict(dyad_keys[i] => vec(pinv_matrix[:, i]) for i in eachindex(dyad_keys))
-    
-#     return pinv_dict
-# end
 
 function pinv_sparsedyads(dyad_dict::SparseDyadVectors{N,T})::SparseDyadVectors{N,T} where {N,T}
     dyad_keys = collect(keys(dyad_dict))                            
@@ -79,14 +71,8 @@ function expectation_sparse(vi, wi, d_ops, v0, ei, t, R)
 end
 
 
-# N R ratio_1 ratio_inf
-# 2 3 4 4
-# 3 3 2.938 2.859
-# 4 3 2.829 2.799
-# 5 3 3.324 3.299
-# 6 3 4.393 4.494
 function run()
-    N = 4
+    N = 6
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -101,44 +87,38 @@ function run()
     # println("Matrix Form of L: ")
     # display(Lmat)
     println("Diagonalization started")
-    F = eigen(Lmat)
+    @time F = eigen(Lmat)
 
     state = DyadSum(Dyad(N, dim-1, dim-1))
     vec_state_i = vec(Matrix(state))
-    # display(vec_state_i)
+
     # Sort Eigenvalues by real part
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
     states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
-    @printf(" Eigenvalues of L:\n")
-    for i in 1:length(F.values)
-        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
-    end
+    # @printf(" Eigenvalues of L:\n")
+    # for i in 1:length(F.values)
+    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    # end
+
     sci_val = []
     eig_val = []
     eig_val_ss = []
 
-    # R_1 = 0
-    # display(F.vectors[:, 7])
     ops = Pauli(N, Z = [1, 2])
     # ops += Pauli(N, Z = [2,3])
     mat_ops = Matrix(ops)
     d_ops = matrix_to_dyad(mat_ops)
 
-    # return 
-    # Using the SCI formalism
+    # Number of Eigenvectors for SCI
     nkeep = 3
 
-    # v0 = DyadSum(Dyad(N,0,0))
     v0 = SparseDyadVectors(state, R = nkeep)
     println("SCI started")
-    final_state = selected_ci(L, v0, max_iter_outer=10)
+    @time final_state = selected_ci(L, v0, max_iter_outer=10)
 
-    # display(final_state)
-    # display(todense(final_state))
     Lmat_sci = build_subspace_L(L, final_state)
-    # display(Lmat_sci)
 
     F_sci = eigen(Lmat_sci)
 
@@ -146,15 +126,6 @@ function run()
     F_sci.values .= F_sci.values[perm]
     F_sci.vectors .= F_sci.vectors[:, perm]
 
-    # display(todense(v0))
-    # println("\n State after SCI \n")
-    # final_vec_state = vec(Matrix(final_state))
-    # display(F_sci.values)
-    # println("Eigenvalues of L subspace")
-    # for i in 1:length(F_sci.values)
-    #     @printf(" %4i %12.8f %12.8fi\n", i, real(F_sci.values[i]), imag(F_sci.values[i]))
-    # end
-    # return
     dim_1, R_1 = size(final_state)
     # println(dim_1, " ", R_1)
 
@@ -164,26 +135,14 @@ function run()
     vi_f = vi_f[:, end-R_1+1:end]
     
     states_sci = [reshape(Matrix(todense(final_state))[:, i], 2^N, 2^N)/sqrt(2^N) for i in 1:nkeep]
-    @printf(" Eigenvalues of L SCI:\n")
-    for i in 1:nkeep
-        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
-    end
-    # return
-    # display(ei)
-    # vi = todense(final_state)
-    # wi = pinv(vi)
+    # @printf(" Eigenvalues of L SCI:\n")
+    # for i in 1:nkeep
+    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
+    # end
+
+    # Initializing the left and right eigenvectors
     vi = final_state
     wi = pinv_sparsedyads(vi)
-
-    # println("State")
-    # display(Matrix(vi)[:, 1])
-    # println("Pinv State")
-    # display(transpose(Matrix(wi)[:, 1]))
-    # display((transpose(Matrix(wi)[:, 1]))*(Matrix(vi)[:, 2]))
-    # return
-    # println("\n Inverse of State")
-    # display(norm(Matrix(wi)[:, 3]))
-    # return
 
     mat_vi = Matrix(todense(vi))
 
@@ -191,35 +150,18 @@ function run()
 
     for T in time_step
 
-        # ρt = compute_ρt(T, F, vec_state_i)
-        ρt = compute_ρt(T, F, vec_state_i)
-        # ρt = compute_ρt(T, Matrix(todense(vi)), vec_state_i)
-        ρt = reshape(ρt, (dim, dim))
+        # Exact Formalism
+        @time exp_eig = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
+
         println("============================================================")
 
-        display(tr(ρt))
-        # @printf(" State after time T:\n")
-        # display(ρt)
-        # println("Expectation Value")
-        exp_eig = tr(mat_ops*ρt)
-        # display(exp_eig)
+        # SCI Dense Formalism
+        @time exp_eigss = compute_ρt_ss_exp(T, ei, mat_vi, vec_state_i, mat_ops, dim)
 
-        # display(F.vectors)
-
-        ρtss = compute_ρt_ss(T, ei, mat_vi, vec_state_i)
-        # ρtss = compute_ρt_ss(T, ei, mat_vi, Vector(Matrix(todense(v0))))
-
-        # display(typeof(ρtss))
-        ρtss = reshape(ρtss, (dim, dim))#/sqrt(2^N)
-        # display(mat_ops * ρtss)
-        exp_eigss = tr(mat_ops*ρtss)
-        display(tr(ρtss))
-        # display(ρtss)
-        # return
         println("============================================================")
-        # return
-        # display(ops*final_state)
-        out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
+
+        # SCI Sparse Formalism
+        @time out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
 
         # for m in 1:R_1
         #     for (state_v, coeff_v) in vi
@@ -248,7 +190,6 @@ function run()
         #         # display(out_n)
         #     end 
         # end 
-        # out_n = out_n
         println("Time: ", T)
         println("\n Exp Value using SCI")
         display(out_n)
@@ -257,16 +198,25 @@ function run()
         println("\n Exp Value using SCI Dense")
         display(exp_eigss)
         display(abs(exp_eig) / abs(out_n))
-        # return
 
         push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
-        push!(eig_val_ss, abs(0))
-        # return
+        push!(eig_val_ss, abs(exp_eigss))
     end
     s_ops = string(ops)
-    plot(time_step, [sci_val, eig_val, eig_val_ss], label = ["SCI" "Eig" "Eig(ss)"])
-    title!("Expectation value of $s_ops using SCI(R = $R_1) and Eigendecomposition of L for N=$N", titlefontsize = 8)
+    f_size = 8
+    plot(time_step, [sci_val, eig_val, eig_val_ss], 
+        label = ["SCI" "Eig" "Eig(ss)"],
+        xlabel = "Time (t)", 
+        ylabel = "Expectation value ⟨O⟩(t)",
+        title = "Expectation value of $s_ops using SCI(R = $R_1) and Eigendecomposition of L for N=$N",
+        legend = :topright,
+        lw = 2,
+        marker = :circle,
+        guidefontsize = f_size,     
+        tickfontsize = f_size,      
+        legendfontsize = f_size,    
+        titlefontsize = f_size) 
     savefig("test/sci_vs_eig_$N-r_$R_1.pdf")
     return
 end
