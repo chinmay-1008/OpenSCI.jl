@@ -5,7 +5,8 @@ using DifferentialEquations
 using Plots
 using Printf
 using OrderedCollections
-
+using StatProfilerHTML
+gr()
 
 function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
         
@@ -24,7 +25,7 @@ function compute_ρt_ss_exp(t, Fe, Fv, ρ0::Vector, mat_ops, dim)
     w = pinv(Fv)
     v = Fv
     λ = Fe
-    ρt_ss = v * Diagonal(exp.(λ*t)) * w * ρ0
+    ρtss = v * Diagonal(exp.(λ*t)) * w * ρ0
     ρtss = reshape(ρtss, (dim, dim))
     exp_eigss = tr(mat_ops*ρtss)
     return exp_eigss
@@ -63,8 +64,8 @@ end
 function expectation_sparse(vi, wi, d_ops, v0, ei, t, R)
     expval = 0.0
     for m in 1:R
-        ovi = sum(conj(d_ops[d]) * vi[d][m] for d in keys(vi) if haskey(d_ops,d))
-        wir = sum(conj(wi[d][m]) * v0[d][1] for d in keys(wi) if haskey(v0,d))
+        ovi = sum(conj(d_ops[d]) * vi[d][m] for d in keys(vi) if haskey(d_ops, d))
+        wir = sum((wi[d][m]) * v0[d][1] for d in keys(wi) if haskey(v0, d)) # Should it be conj(wi)?
         expval += exp(ei[m]*t) * ovi * wir
     end
     return expval
@@ -87,7 +88,7 @@ function run()
     # println("Matrix Form of L: ")
     # display(Lmat)
     println("Diagonalization started")
-    @time F = eigen(Lmat)
+    F = eigen(Lmat)
 
     state = DyadSum(Dyad(N, dim-1, dim-1))
     vec_state_i = vec(Matrix(state))
@@ -96,7 +97,7 @@ function run()
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
-    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    # states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
     # @printf(" Eigenvalues of L:\n")
     # for i in 1:length(F.values)
     #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
@@ -112,33 +113,32 @@ function run()
     d_ops = matrix_to_dyad(mat_ops)
 
     # Number of Eigenvectors for SCI
-    nkeep = 3
+    nkeep = 4
 
     v0 = SparseDyadVectors(state, R = nkeep)
     println("SCI started")
-    @time final_state = selected_ci(L, v0, max_iter_outer=10)
+    @profilehtml final_state, ei = selected_ci(L, v0, max_iter_outer=10)
+    # Lmat_sci = build_subspace_L(L, final_state)
 
-    Lmat_sci = build_subspace_L(L, final_state)
+    # F_sci = eigen(Lmat_sci)
 
-    F_sci = eigen(Lmat_sci)
-
-    perm = sortperm(F_sci.values, by=real)
-    F_sci.values .= F_sci.values[perm]
-    F_sci.vectors .= F_sci.vectors[:, perm]
-
+    # perm = sortperm(F_sci.values, by=real)
+    # F_sci.values .= F_sci.values[perm]
+    # F_sci.vectors .= F_sci.vectors[:, perm]
+    # ei = F_sci.values
+    # vi_f = F_sci.vectors
+    # ei = ei[end-R_1+1:end]
+    # vi_f = vi_f[:, end-R_1+1:end]
+    
     dim_1, R_1 = size(final_state)
     # println(dim_1, " ", R_1)
 
-    ei = F_sci.values
-    vi_f = F_sci.vectors
-    ei = ei[end-R_1+1:end]
-    vi_f = vi_f[:, end-R_1+1:end]
     
     states_sci = [reshape(Matrix(todense(final_state))[:, i], 2^N, 2^N)/sqrt(2^N) for i in 1:nkeep]
-    # @printf(" Eigenvalues of L SCI:\n")
-    # for i in 1:nkeep
-    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
-    # end
+    @printf(" Eigenvalues of L SCI:\n")
+    for i in 1:nkeep
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
+    end
 
     # Initializing the left and right eigenvectors
     vi = final_state
@@ -146,52 +146,25 @@ function run()
 
     mat_vi = Matrix(todense(vi))
 
-    time_step = [i for i in 1:10]
+    time_step = [i for i in 0:10]
 
     for T in time_step
-
+        println("==========================EXP==================================")
         # Exact Formalism
-        @time exp_eig = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
+        exp_eig = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
 
-        println("============================================================")
+        println("===========================EXPSS=================================")
 
         # SCI Dense Formalism
-        @time exp_eigss = compute_ρt_ss_exp(T, ei, mat_vi, vec_state_i, mat_ops, dim)
+        exp_eigss = compute_ρt_ss_exp(T, ei, mat_vi, vec_state_i, mat_ops, dim)
 
-        println("============================================================")
+        println("==========================EXPSPARSE==================================")
 
         # SCI Sparse Formalism
-        @time out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
+        out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
 
-        # for m in 1:R_1
-        #     for (state_v, coeff_v) in vi
-        #         if haskey(d_ops, state_v)
-        #             ovi = (d_ops[state_v])' * coeff_v[m]
-        #             # println("OVI ")
-        #             # display(ovi)
-        #         else
-        #             ovi = 0
-        #         end
-        #         # println("OVI")
-        #         # display(ovi)
-
-        #         if haskey(v0, state_v)
-        #             wir = (wi[state_v][m]) * v0[state_v][m]
-        #             # println("WIR")
-        #             # display(wir) 
-
-        #         else
-        #             wir = 0
-        #         end
-        #         # println("WIR")
-        #         # display(wir)
-        #         out_n += (ovi * wir * exp(ei[m]*T))
-        #         # println("OUT ")
-        #         # display(out_n)
-        #     end 
-        # end 
         println("Time: ", T)
-        println("\n Exp Value using SCI")
+        println("\n Exp Value using SCI Sparse")
         display(out_n)
         println("\n Exp Value using Eigen Values")
         display(exp_eig)
@@ -211,7 +184,7 @@ function run()
         ylabel = "Expectation value ⟨O⟩(t)",
         title = "Expectation value of $s_ops using SCI(R = $R_1) and Eigendecomposition of L for N=$N",
         legend = :topright,
-        lw = 2,
+        lw = 1,
         marker = :circle,
         guidefontsize = f_size,     
         tickfontsize = f_size,      

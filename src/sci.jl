@@ -12,65 +12,56 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
     last = deepcopy(v)
 
     Pv= deepcopy(v)
-    
+    e = 0
+    # v = 
     for n_iter in 1:max_iter_outer
         # @printf("\n")
-        # @printf("\n ####################################")
-        # @printf("\n SCI Iteration: %4i\n", n_iter)
-        # display(Pv)
-        clip!(Pv, thresh=ϵdiscard) 
-        # println("clipclipclip")
-        # display(Pv)
+        @printf("\n ####################################")
+        @printf("\n SCI Iteration: %4i\n", n_iter)
+        clip!(Pv, thresh=ϵdiscard)
+         
         σ = multiply(L, Pv, ϵ=ϵsearch)
-        # println("prprprprprprp")
-        # display(σ)
-
 
         for (d,c) in σ
             if maximum(abs2.(c)) > ϵdiscard
-                # sum!(PLP, d, c)
                 sum!(Pv, d, zeros(T, R))
             else
-                # sum!(QLP, d, c)
             end
         end
-        # display(Pv)
-        # display(size(Pv))
 
         Lmat = build_subspace_L(L, Pv)
         e = 0
         v = zeros(T,size(Pv))
-        # println(size(Lmat)," ", size(L))
-        # display(Lmat)
-        # if length(Pv) < 300
-        e,v = eigen(Lmat)
-        # println("VEC")
-        # display(v)
-        e = e[end-R+1:end]
-        # println("MOD VEC")
-        v = v[:, end-R+1:end]
-        # display(v)
 
-        # else
-            # e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=500)
-        # end
-        # println("\nState")
-        # display(Pv)
-        # println("\n Fill State")
+        if length(Pv) < 300
+            e,v = eigen(Lmat)
+            e = e[end-R+1:end]
+            v = v[:, end-R+1:end]
+            println("Eigen")
+        else
+            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=5000, tol= 1e-5 )
+            println("Eigs")
+            perm = sortperm(real(e))
+            e = e[perm]
+            v = v[:, perm]
+        end
+        
+        # perm = sortperm(real(e))
+        # e = e[perm[end-R+1:end]]
+        # v = v[:, perm[end-R+1:end]]
+        
         fill!(Pv, v)
-        # display(Pv)
         if verbose > 1
             display(Pv'*last)
         end
 
         ovlap = Pv'*last
-        # display(Lmat)
 
         # @printf("\n Eigenvalues of Lmat:\n")
         # display(e)
         # println("############")
         # for i in eachindex(e)
-            # @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
+        #     @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
         # end
 
 
@@ -79,7 +70,6 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 
             tmp2 = Matrix(last)
             ovlap = pinv(tmp1)*tmp2
-            # @show det(ovlap) 
             if abs(1 - det(ovlap)) < thresh_conv 
                 @printf(" *Converged\n")
                 break
@@ -87,11 +77,8 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
         end
         
         last = deepcopy(Pv)
-        # println("\nMAT Pv")
-        # display(Matrix(Pv))
     end
-
-    return Pv
+    return Pv, e
 end
 
 
