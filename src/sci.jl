@@ -16,10 +16,10 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
     # v = 
     for n_iter in 1:max_iter_outer
         # @printf("\n")
-        @printf("\n ####################################")
-        @printf("\n SCI Iteration: %4i\n", n_iter)
+        # @printf("\n ####################################")
+        # @printf("\n SCI Iteration: %4i\n", n_iter)
         clip!(Pv, thresh=ϵdiscard)
-         
+
         σ = multiply(L, Pv, ϵ=ϵsearch)
 
         for (d,c) in σ
@@ -37,10 +37,10 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
             e,v = eigen(Lmat)
             e = e[end-R+1:end]
             v = v[:, end-R+1:end]
-            println("Eigen")
+            # println("Eigen")
         else
-            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=5000, tol= 1e-5 )
-            println("Eigs")
+            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=5000, tol=1e-5 )
+            # println("Eigs")
             perm = sortperm(real(e))
             e = e[perm]
             v = v[:, perm]
@@ -82,18 +82,24 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 end
 
 
+function prepare_lindblad_cache(L::Lindbladian{N}) where {N}
+    return [(Li, Li' * Li) for Li in L.L]
+end
+
 function multiply(L::Lindbladian{N}, ρ::SparseDyadVectors{N,T}; ϵ=1e-16) where {N,T}
     σ = SparseDyadVectors{N,T}()
 
+    L_dat = prepare_lindblad_cache(L)
     # Unitary part
     for (rdyad, rcoeffs) in ρ
+        σi = DyadSum(N)
+        σi += -1im * (L.H * rdyad - rdyad * L.H)
 
-        σi = -1im * (L.H * rdyad - rdyad * L.H)
-        
         for i in 1:length(L.γ)
-            Li = L.L[i]
-            LL = Li' * Li
-           
+            # Li = L.L[i]
+            # LL = Li' * Li
+            Li, LL = L_dat[i]
+            
             σi +=  L.γ[i] * (Li * rdyad * Li')
             σi -= 0.5*L.γ[i]*(LL*rdyad + rdyad*LL)
         end

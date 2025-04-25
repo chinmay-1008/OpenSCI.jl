@@ -2,11 +2,12 @@ using OpenSCI
 using PauliOperators
 using LinearAlgebra
 using DifferentialEquations
-using Plots
+using Plots, Measures
 using Printf
 using OrderedCollections
 using StatProfilerHTML
-gr()
+gr(display_type=:inline)
+
 
 function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
         
@@ -16,8 +17,12 @@ function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
     ρt = v * Diagonal(exp.(λ*t)) * w * ρ0
     ρt = reshape(ρt, (dim, dim))
     exp_eig = tr(mat_ops*ρt)
-
-    return exp_eig
+    popu = []
+    for i in 1:dim
+        push!(popu, ρt[i, i])
+    end
+    # display(ρt)
+    return exp_eig, popu
 end
 
 function compute_ρt_ss_exp(t, Fe, Fv, ρ0::Vector, mat_ops, dim)
@@ -71,15 +76,24 @@ function expectation_sparse(vi, wi, d_ops, v0, ei, t, R)
     return expval
 end
 
+function population_densities(N, vi, wi, v0, ei, t, R)
+    pops = zeros(2^N)
+    for i in 0:2^N-1
+        obs = DyadSum(Dyad(N, i, i))
+        pops[i+1] = abs(expectation_sparse(vi, wi, obs, v0, ei, t, R))
+    end
+    return pops
+end
+
 
 function run()
-    N = 6
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
     L = Lindbladian(N)
-    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
-    add_channel_dephasing!(L, .6)
+    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 10.1, 1.2, 5.3))
+    add_channel_dephasing!(L, 0.1)
     add_channel_depolarizing!(L, .1)
     println("Lindbladian: ")
     display(L)
@@ -97,27 +111,28 @@ function run()
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
-    # states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
-    # @printf(" Eigenvalues of L:\n")
-    # for i in 1:length(F.values)
-    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
-    # end
+    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    @printf(" Eigenvalues of L:\n")
+    for i in 1:length(F.values)
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    end
 
     sci_val = []
     eig_val = []
     eig_val_ss = []
-
+    pop_t_sci = []
+    pop_t_ex = []
     ops = Pauli(N, Z = [1, 2])
     # ops += Pauli(N, Z = [2,3])
     mat_ops = Matrix(ops)
     d_ops = matrix_to_dyad(mat_ops)
 
     # Number of Eigenvectors for SCI
-    nkeep = 4
+    nkeep = 5
 
     v0 = SparseDyadVectors(state, R = nkeep)
     println("SCI started")
-    @profilehtml final_state, ei = selected_ci(L, v0, max_iter_outer=10)
+    final_state, ei = selected_ci(L, v0, max_iter_outer=10)
     # Lmat_sci = build_subspace_L(L, final_state)
 
     # F_sci = eigen(Lmat_sci)
@@ -146,12 +161,12 @@ function run()
 
     mat_vi = Matrix(todense(vi))
 
-    time_step = [i for i in 0:10]
+    time_step = [i/20 for i in 0:100]
 
     for T in time_step
         println("==========================EXP==================================")
         # Exact Formalism
-        exp_eig = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
+        exp_eig, pop_ex = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
 
         println("===========================EXPSS=================================")
 
@@ -162,6 +177,8 @@ function run()
 
         # SCI Sparse Formalism
         out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
+
+        pop_sci = population_densities(N, vi, wi, v0, ei, T, R_1)
 
         println("Time: ", T)
         println("\n Exp Value using SCI Sparse")
@@ -175,6 +192,8 @@ function run()
         push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
         push!(eig_val_ss, abs(exp_eigss))
+        push!(pop_t_sci, pop_sci)
+        push!(pop_t_ex, pop_ex)
     end
     s_ops = string(ops)
     f_size = 8
@@ -191,7 +210,88 @@ function run()
         legendfontsize = f_size,    
         titlefontsize = f_size) 
     savefig("test/sci_vs_eig_$N-r_$R_1.pdf")
+
+    label_exact = reduce(hcat, [["Exact |$(i)⟩"] for i in 0:2^N-1])
+    label_sci   = reduce(hcat, [["SCI   |$(i)⟩"] for i in 0:2^N-1])
+
+    Y1 = abs.(hcat(pop_t_ex...)')  # Exact results
+    Y2 = abs.(hcat(pop_t_sci...)')  # SCI results
+    # display(Y2)
+    p1 = plot(time_step, Y1,
+        label=label_exact,
+        # linestyle=:solid,
+        title="Exact",
+        xlabel="Time", ylabel="Population",
+        legend=:topright
+    )
+
+    p2 = plot(time_step, Y2,
+        label=label_sci,
+        # linestyle=:dash,
+        title="SCI",
+        xlabel="Time", ylabel="Population",
+        legend=:topright
+    )
+
+
+    plot(p1, p2, layout=(1, 2), size=(1000, 400), top_margin=5mm,bottom_margin = 5mm, right_margin=5mm, left_margin=5mm, dpi=300, legendfontsize =4)
+    savefig("test/pop_$N.pdf")
+
     return
 end
 
-run()
+function decay_rate(N)
+    dim = 2^N
+
+    # Initializing the Lindbladian
+    L = Lindbladian(N)
+    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 2.1, 1.2, 1.3))
+    add_channel_dephasing!(L, .1)
+    add_channel_depolarizing!(L, .1)
+    # println("Lindbladian: ")
+    # display(L)
+    nkeep = 4
+
+    Lmat = Matrix(L)
+    # println("Matrix Form of L: ")
+    # display(Lmat)
+    println("Diagonalization started")
+    F = eigen(Lmat)
+
+    state = DyadSum(Dyad(N, dim-1, dim-1))
+    vec_state_i = vec(Matrix(state))
+
+    # Sort Eigenvalues by real part
+    perm = sortperm(F.values, by=real)
+    F.values .= F.values[perm]
+    F.vectors .= F.vectors[:, perm]
+    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    @printf(" Eigenvalues of L:\n")
+    num_eig_ex = length(F.values)
+    for i in num_eig_ex-nkeep:num_eig_ex
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    end
+
+    # Number of Eigenvectors for SCI
+
+    v0 = SparseDyadVectors(state, R = nkeep)
+    println("SCI started")
+    final_state, ei = selected_ci(L, v0, max_iter_outer=10)
+
+    dim_1, R_1 = size(final_state)
+    # println(dim_1, " ", R_1)
+
+    
+    states_sci = [reshape(Matrix(todense(final_state))[:, i], 2^N, 2^N)/sqrt(2^N) for i in 1:nkeep]
+    @printf(" Eigenvalues of L SCI:\n")
+    for i in 1:nkeep
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(ei[i]), imag(ei[i]), real(tr(states_sci[i])))
+    end
+
+end
+
+# run()
+for i in 2:8
+    println("N: ", i)
+    decay_rate(i)
+end
