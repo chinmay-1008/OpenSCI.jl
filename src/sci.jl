@@ -15,9 +15,8 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
     e = 0
     # v = 
     for n_iter in 1:max_iter_outer
-        # @printf("\n")
-        # @printf("\n ####################################")
-        # @printf("\n SCI Iteration: %4i\n", n_iter)
+        @printf("\n ####################################")
+        @printf("\nSCI Iteration: %4i", n_iter)
         clip!(Pv, thresh=ϵdiscard)
 
         σ = multiply(L, Pv, ϵ=ϵsearch)
@@ -32,15 +31,16 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
         Lmat = build_subspace_L(L, Pv)
         e = 0
         v = zeros(T,size(Pv))
-
+        println(size(Pv))
         if length(Pv) < 300
             e,v = eigen(Lmat)
             e = e[end-R+1:end]
             v = v[:, end-R+1:end]
-            # println("Eigen")
+            
+            println("Eigen")
         else
-            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=5000, tol=1e-5 )
-            # println("Eigs")
+            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
+            println("Eigs")
             perm = sortperm(real(e))
             e = e[perm]
             v = v[:, perm]
@@ -57,12 +57,12 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 
         ovlap = Pv'*last
 
-        # @printf("\n Eigenvalues of Lmat:\n")
+        @printf("Eigenvalues of Lmat:\n")
         # display(e)
-        # println("############")
-        # for i in eachindex(e)
-        #     @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
-        # end
+        println("############")
+        for i in eachindex(e)
+            @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
+        end
 
 
         if length(Pv) == length(last)

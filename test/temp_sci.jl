@@ -26,7 +26,7 @@ function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
 end
 
 function compute_ρt_ss_exp(t, Fe, Fv, ρ0::Vector, mat_ops, dim)
-        
+
     w = pinv(Fv)
     v = Fv
     λ = Fe
@@ -87,12 +87,12 @@ end
 
 
 function run()
-    N = 4
+    N = 2
     dim = 2^N
 
     # Initializing the Lindbladian
     L = Lindbladian(N)
-    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 10.1, 1.2, 5.3))
+    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
     add_channel_dephasing!(L, 0.1)
     add_channel_depolarizing!(L, .1)
     println("Lindbladian: ")
@@ -100,22 +100,23 @@ function run()
 
     Lmat = Matrix(L)
     # println("Matrix Form of L: ")
-    # display(Lmat)
+    display(size(Lmat))
     println("Diagonalization started")
-    F = eigen(Lmat)
 
-    state = DyadSum(Dyad(N, dim-1, dim-1))
+    state = DyadSum(Dyad(N, 0, 0))
     vec_state_i = vec(Matrix(state))
 
+
+    F = eigen(Lmat)
     # Sort Eigenvalues by real part
     perm = sortperm(F.values, by=real)
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
-    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
-    @printf(" Eigenvalues of L:\n")
-    for i in 1:length(F.values)
-        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
-    end
+    # states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    # @printf(" Eigenvalues of L:\n")
+    # for i in 1:length(F.values)
+    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    # end
 
     sci_val = []
     eig_val = []
@@ -161,33 +162,35 @@ function run()
 
     mat_vi = Matrix(todense(vi))
 
-    time_step = [i/20 for i in 0:100]
+    time_step = [i/10 for i in 0:50]
 
     for T in time_step
-        println("==========================EXP==================================")
+        println("\nTime: ", T)
+
+        println("\n ==========================EXP==================================")
         # Exact Formalism
         exp_eig, pop_ex = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
+        println("Exp Value using Eigen Values")
+        display(exp_eig)
 
         println("===========================EXPSS=================================")
 
         # SCI Dense Formalism
         exp_eigss = compute_ρt_ss_exp(T, ei, mat_vi, vec_state_i, mat_ops, dim)
+        println("Exp Value using SCI Dense")
+        display(exp_eigss)
 
         println("==========================EXPSPARSE==================================")
 
         # SCI Sparse Formalism
         out_n = expectation_sparse(vi, wi, d_ops, v0, ei, T, R_1)
 
+        println("Exp Value using SCI Sparse")
+        display(out_n)
+
         pop_sci = population_densities(N, vi, wi, v0, ei, T, R_1)
 
-        println("Time: ", T)
-        println("\n Exp Value using SCI Sparse")
-        display(out_n)
-        println("\n Exp Value using Eigen Values")
-        display(exp_eig)
-        println("\n Exp Value using SCI Dense")
-        display(exp_eigss)
-        display(abs(exp_eig) / abs(out_n))
+        # display(abs(exp_eig) / abs(out_n))
 
         push!(sci_val, abs(out_n))
         push!(eig_val, abs(exp_eig))
@@ -216,26 +219,54 @@ function run()
 
     Y1 = abs.(hcat(pop_t_ex...)')  # Exact results
     Y2 = abs.(hcat(pop_t_sci...)')  # SCI results
-    # display(Y2)
+
     p1 = plot(time_step, Y1,
-        label=label_exact,
+        # label=label_exact,
         # linestyle=:solid,
         title="Exact",
         xlabel="Time", ylabel="Population",
-        legend=:topright
+        ylim=(-0.1, 1),
+        # legend=:topright
+        legend=false
     )
 
     p2 = plot(time_step, Y2,
-        label=label_sci,
+        # label=label_sci,
         # linestyle=:dash,
         title="SCI",
         xlabel="Time", ylabel="Population",
-        legend=:topright
+        ylim=(-0.1, 1),
+        # legend=:topright
+        legend=false
     )
 
 
     plot(p1, p2, layout=(1, 2), size=(1000, 400), top_margin=5mm,bottom_margin = 5mm, right_margin=5mm, left_margin=5mm, dpi=300, legendfontsize =4)
     savefig("test/pop_$N.pdf")
+
+    p1 = scatter(real.(F.values), imag.(F.values),
+    title = "Full Diagonalization",
+    xlabel = "Re(λ)",
+    ylabel = "Im(λ)",
+    legend = false,
+    # aspect_ratio = :equal,
+    marker = (:circle, 2)
+    )
+
+    p2 = scatter(real.(ei), imag.(ei),
+    title = "SCI Approximation",
+    xlabel = "Re(λ)",
+    ylabel = "Im(λ)",
+    legend = false,
+    # aspect_ratio = :equal,
+    # xlim=(-3, 0.2),
+    ylim=(-1, 1),
+    marker = (:circle, 2)
+    )
+
+# Combine into subplots
+    plot(p1, p2, layout=(1, 2), size=(1000, 400), top_margin=5mm,bottom_margin = 5mm, right_margin=5mm, left_margin=5mm, dpi=300, legendfontsize =4)
+    savefig("test/eig_$N.pdf")
 
     return
 end
@@ -248,13 +279,10 @@ function decay_rate(N)
     add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 2.1, 1.2, 1.3))
     add_channel_dephasing!(L, .1)
     add_channel_depolarizing!(L, .1)
-    # println("Lindbladian: ")
-    # display(L)
+
     nkeep = 4
 
     Lmat = Matrix(L)
-    # println("Matrix Form of L: ")
-    # display(Lmat)
     println("Diagonalization started")
     F = eigen(Lmat)
 
@@ -290,8 +318,16 @@ function decay_rate(N)
 
 end
 
-# run()
-for i in 2:8
-    println("N: ", i)
-    decay_rate(i)
-end
+run()
+# for i in 2:8
+#     println("N: ", i)
+#     decay_rate(i)
+# end
+
+
+# Eigenvalues of L SCI:
+# 1  -2.40345524 113.61282179i Tr =   0.00000000
+# 2  -2.40344475 -113.61281237i Tr =  -0.00000000
+# 3  -1.57518509  -0.00000041i Tr =  -0.00000000
+# 4  -1.10448632  -0.00000000i Tr =   0.00000000
+# 5   0.00000000  -0.00000000i Tr =   0.99991597
