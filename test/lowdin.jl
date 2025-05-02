@@ -24,22 +24,31 @@ function run()
     display(L)
 
     Lmat = Matrix(L)
-    println("Matrix Form of L: ")
-    dim_1, dim_2 = size(Lmat)
-    for i in 1:dim_1
-        for j in i: dim_2
-            println(i, " ", j, " ", Lmat[:, i]' * Lmat[:, j])
-        end
-    end
+    dim_L = size(Lmat, 1)
+    # println("Matrix Form of L: ")
     # println("Diagonalization started")
-
+    display(size(Lmat))
     state = DyadSum(Dyad(N, 0, 0))
     # vec_state_i = vec(Matrix(state))
-    v0 = SparseDyadVectors(state, R = 1)
-    display(todense(v0))
+    nkeep = 2
+    v0 = SparseDyadVectors(state, R = nkeep)
+
+    state_sci, eig_sci = selected_ci(L, v0, max_iter_outer = 10)
+
+    display(state_sci)
+    display(build_subspace_L(L, state_sci))
+    v_p = Matrix(todense(state_sci))
+    P_space = v_p * v_p'
+    display(P_space)
+
+    i_mat = Matrix{ComplexF64}(LinearAlgebra.I, dim_L, dim_L)
+
+    Q_space = i_mat - P_space
+    display(Q_space)
+
+    
 
     return 
-
 end
 
 run()

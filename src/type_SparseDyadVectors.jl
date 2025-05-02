@@ -76,13 +76,13 @@ function Base.display(ps::SparseDyadVectors)
     end
 end
 
-function Base.display(ps::SparseDyadVectors; state=1)
-    for (key,val) in ps
-        @printf(" %12s ", key)
-        @printf(" %12.8f +%12.8fi", real(val[state]), imag(val[state]))
-        @printf("\n")
-    end
-end
+# function Base.display(ps::SparseDyadVectors; state=1)
+#     for (key,val) in ps
+#         @printf(" %12s ", key)
+#         @printf(" %12.8f +%12.8fi", real(val[state]), imag(val[state]))
+#         @printf("\n")
+#     end
+# end
 
 function DyadSum(sdv::SparseDyadVectors{N,T}; state=1) where {N,T} 
     out = DyadSum(N,T)

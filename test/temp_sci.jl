@@ -6,7 +6,7 @@ using Plots, Measures
 using Printf
 using OrderedCollections
 using StatProfilerHTML
-gr(display_type=:inline)
+# gr(display_type=:inline)
 
 
 function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
@@ -21,7 +21,6 @@ function compute_ρt_exp(t, F, ρ0::Vector, mat_ops, dim)
     for i in 1:dim
         push!(popu, ρt[i, i])
     end
-    # display(ρt)
     return exp_eig, popu
 end
 
@@ -172,7 +171,7 @@ function run()
         exp_eig, pop_ex = compute_ρt_exp(T, F, vec_state_i, mat_ops, dim)
         println("Exp Value using Eigen Values")
         display(exp_eig)
-
+# return 
         println("===========================EXPSS=================================")
 
         # SCI Dense Formalism
