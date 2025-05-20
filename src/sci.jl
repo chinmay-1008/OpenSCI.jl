@@ -59,7 +59,7 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 
         @printf("Eigenvalues of Lmat:\n")
         # display(e)
-        println("############")
+        # println("############")
         for i in eachindex(e)
             @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
         end
