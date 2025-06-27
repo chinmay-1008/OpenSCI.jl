@@ -31,7 +31,8 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
         Lmat = build_subspace_L(L, Pv)
         e = 0
         v = zeros(T,size(Pv))
-        println(size(Pv))
+        # println()
+        display(size(Pv))
         if length(Pv) < 300
             e,v = eigen(Lmat)
             e = e[end-R+1:end]
@@ -57,12 +58,12 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 
         ovlap = Pv'*last
 
-        @printf("Eigenvalues of Lmat:\n")
-        # display(e)
-        # println("############")
-        for i in eachindex(e)
-            @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
-        end
+        # @printf("Eigenvalues of Lmat:\n")
+        # # display(e)
+        # # println("############")
+        # for i in eachindex(e)
+        #     @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
+        # end
 
 
         if length(Pv) == length(last)
@@ -167,6 +168,70 @@ function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N
                     ldyad = γ * (Pj' * Pk * rdyad)
                     if haskey(v, DyadBasis(ldyad)) 
                         Lmat[indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    end
+                end
+            end
+        end
+    end
+    return Lmat 
+end
+
+function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVectors{N,T}, v_col::SparseDyadVectors{N, T}) where {N,T}
+    row_indices = Dict{DyadBasis{N}, Int}()
+    col_indices = Dict{DyadBasis{N}, Int}()
+
+    for (i, (d,c)) in enumerate(v_row)
+        row_indices[d] = i
+    end
+
+    for (j, (d, c)) in enumerate(v_col)
+        col_indices[d] = j
+    end
+
+    row_dim = length(v_row)
+    col_dim = length(v_col)
+    
+    Lmat = zeros(T, row_dim, col_dim)
+
+    vi = 0
+    # Unitary part
+    for rdyad in keys(v_col)
+        vi = col_indices[rdyad] 
+
+        for (pauli, coefficient) in L.H
+            
+            ldyad = coefficient * (pauli * rdyad)
+            if haskey(row_indices, DyadBasis(ldyad)) 
+                Lmat[row_indices[DyadBasis(ldyad)], vi] += -1im * coeff(ldyad)
+            end
+            
+            ldyad = coefficient * (rdyad * pauli)
+            if haskey(row_indices, DyadBasis(ldyad)) 
+                Lmat[row_indices[DyadBasis(ldyad)], vi] += 1im * coeff(ldyad)
+            end
+        end
+
+        # Dissipation part
+        for i in 1:length(L.γ)
+            γ = L.γ[i]
+            for (pj, cj) in L.L[i]
+                for (pk, ck) in L.L[i]
+                    Pj = pj * cj
+                    Pk = pk * ck
+
+                    ldyad = γ * (Pj * rdyad * Pk')
+                    if haskey(row_indices, DyadBasis(ldyad)) 
+                        Lmat[row_indices[DyadBasis(ldyad)], vi] += coeff(ldyad)
+                    end
+                    
+                    ldyad = γ * (rdyad * Pj' * Pk)
+                    if haskey(row_indices, DyadBasis(ldyad)) 
+                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    end
+                    
+                    ldyad = γ * (Pj' * Pk * rdyad)
+                    if haskey(row_indices, DyadBasis(ldyad)) 
+                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
                     end
                 end
             end

@@ -31,5 +31,6 @@ export add_channel_depolarizing!
 export PauliMatrix
 export index
 export evolve
+export build_subspace_L_generalized
 
 end
