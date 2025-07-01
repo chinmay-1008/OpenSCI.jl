@@ -67,7 +67,7 @@ end
 
 
 function matrix_run()
-    N = 5
+    N = 6
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -89,8 +89,8 @@ function matrix_run()
     F.values .= F.values[perm]
     F.vectors .= F.vectors[:, perm]
     states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
-    @printf(" Eigenvalues of L:\n")
-    for i in 1:length(F.values)
+    @printf("\n Eigenvalues of L:\n")
+    for i in (length(F.values) - 2):length(F.values)
         @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
     end
 
@@ -101,8 +101,8 @@ function matrix_run()
     nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 2)
-    println("Eigenvalues after SCI")
+    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 5)
+    println("\n Eigenvalues after SCI")
     display(eig_sci)
 
     vec_p_dyad = sparse_vec(p_dyad)
@@ -134,7 +134,7 @@ function matrix_run()
     n = size(lmat_xx)[1]
     identity_matrix = Matrix{Float64}(I, n, n)
 
-    corr_idx = 1
+    corr_idx = 2
     lambda = eig_sci[corr_idx]*identity_matrix
 
     pertubation  = lmat_px * inv(lambda - lmat_xx) * lmat_xp
@@ -143,11 +143,11 @@ function matrix_run()
     # display(pertubation)
 
     e, v = eigen(leff)
-    println("Eigenvalues after Lowdin")
+    println("\n Eigenvalues after Lowdin")
     new_eig = e[end-nkeep+1:end]
     display(new_eig)
 
-    println("Using SCI eigenvector")
+    println("\n Using SCI eigenvector")
 
     sci_vec = vec_p_dyad[:, corr_idx]' * leff * vec_p_dyad[:, corr_idx]
     display(sci_vec)
@@ -158,8 +158,48 @@ function matrix_run()
     return
 end
 
+function left_eigenvectors(dyad_dict::SparseDyadVectors{N,T}, Lmat)::SparseDyadVectors{N,T} where {N,T}
+    # dyad_keys = collect(keys(dyad_dict))                            
+    # values_matrix = transpose(hcat(values(dyad_dict)...))           
+    e = 0
+    v = zeros(T,size(dyad_dict))
+    display(size(dyad_dict))
+    Lmat = Lmat'
+    dim, R = size(dyad_dict)
+    if length(dyad_dict) < 300
+        e,v = eigen(Lmat)
+        e = e[end-R+1:end]
+        v = v[:, end-R+1:end]
+        
+        println("Eigen for left")
+        display(e)
+    else
+        e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
+        println("Eigs")
+        perm = sortperm(real(e))
+        e = e[perm]
+        v = v[:, perm]
+    end
+    
+    # perm = sortperm(real(e))
+    # e = e[perm[end-R+1:end]]
+    # v = v[:, perm[end-R+1:end]]
+    
+    OpenSCI.fill!(dyad_dict, v)
+    # pinv_matrix = pinv(values_matrix)                              
+    # dim, R = size(dyad_dict)
+    # pinv_sdv = OrderedDict{DyadBasis{N}, Vector{T}}()
+    # pinv_sdv = SparseDyadVectors(DyadSum(N), R = R)
+    # for i in eachindex(dyad_keys)
+    #     pinv_sdv[dyad_keys[i]] = vec(pinv_matrix[:, i])           
+    # end
+
+    return dyad_dict
+end
+
+
 function dyad_run()
-   N = 5
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -182,25 +222,32 @@ function dyad_run()
     F.vectors .= F.vectors[:, perm]
     states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
     @printf(" Eigenvalues of L:\n")
-    for i in 1:length(F.values)
+    for i in (length(F.values) - 2):length(F.values)
         @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
     end
 
     display(size(Lmat))
 
     state = DyadSum(Dyad(N, 0, 0))
-    nkeep = 3
+    nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 2)
-    println("Eigenvalues after SCI")
+    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 1)
+    println("\n Eigenvalues after SCI")
     display(eig_sci)
     # lmat_pp = build_subspace_L(L, p_dyad)
     # println("P-Space")
     # display(lmat_pp)
     x_temp = L * p_dyad
     # println("P-Space")
-    # display(state_sci)
+    # display(p_dyad)
+
+    p_projector = SparseDyadVectors(DyadSum(N), R = 1)
+    proj_coeff = fill(1, 1)
+
+    for (d, c) in p_dyad
+        p_projector[d] = proj_coeff
+    end
 
     x_dyad = SparseDyadVectors(DyadSum(N), R=nkeep)
 
@@ -209,31 +256,42 @@ function dyad_run()
             sum!(x_dyad, d, coeff)
         end
     end 
+
+    x_projector =SparseDyadVectors(DyadSum(N), R = 1)
+    for (d, coeff) in x_temp
+        x_projector[d] = proj_coeff
+    end  
+
     # display(length(x_dyad))
     # display(p_dyad' * (L*p_dyad))
 
     # now getting the correction for the eigenvalues 
     c_idx = 1
 
-    l_x_dyad = L * x_dyad
+    l_x_dyad = L * x_projector
 
-    l_px = p_dyad' * l_x_dyad 
-    l_xp = x_dyad' * x_temp
-    l_xx = x_dyad' * l_x_dyad
+    l_px = p_projector' * l_x_dyad 
 
-    correction = l_px[c_idx, c_idx] * inv(eig_sci[c_idx] - l_xx[c_idx, c_idx]) * l_xp[c_idx, c_idx]
+    l_xp = x_projector' * (L * p_projector)
+    l_xx = x_projector' * l_x_dyad
 
-    println("Temp")
+    # correction = l_px[c_idx, c_idx] * inv(eig_sci[c_idx] - l_xx[c_idx, c_idx]) * l_xp[c_idx, c_idx]
+    correction = l_px[1, 1] * inv(eig_sci[c_idx] - l_xx[1, 1]) * l_xp[1, 1]
 
-    display(l_px)
-    println("Correction")
+    println("\nTemp")
+
+    # display(l_px)
+    # a = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
+    # display(inv(eig_sci[c_idx] - l_xx[1, 1]))
+
+    println("\n Correction")
     display(correction)
     corr_eig = eig_sci[c_idx] + correction
 
-    println("Corrected Eigenvalue")
+    println("\n Corrected Eigenvalue")
     display(corr_eig)
     return
 end
 
-# dyad_run()
-matrix_run()
+dyad_run()
+# matrix_run()
