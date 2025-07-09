@@ -7,6 +7,7 @@ using Printf
 using OrderedCollections
 using StatProfilerHTML
 using BenchmarkTools
+using Arpack
 gr(display_type=:inline)
 
 
@@ -68,7 +69,7 @@ end
 
 
 function matrix_run()
-    N = 4
+    N = 5
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -102,7 +103,7 @@ function matrix_run()
     nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 3)
+    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = 4)
     println("\n Eigenvalues after SCI")
     display(eig_sci)
 
@@ -172,7 +173,7 @@ function left_eigenvectors(dyad_dict::SparseDyadVectors{N,T}, Lmat)::SparseDyadV
         e = e[end-R+1:end]
         v = v[:, end-R+1:end]
     else
-        e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
+        e,v = eigs(Lmat, nev=R, v0=Matrix(dyad_dict)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
         perm = sortperm(real(e))
         e = e[perm]
         v = v[:, perm]
@@ -302,13 +303,9 @@ function dyad_run()
 
 end
 
-using LinearAlgebra
-using Printf
-# Assuming OpenSCI, SparseDyadVectors, etc. are defined elsewhere
-# include("path/to/OpenSCI_definitions.jl")
 
-function dyad_run_optimized()
-    N = 4
+function dyad_run_new()
+    N = 5
     dim = 2^N
 
     # Setup Lindbladian 
@@ -336,7 +333,7 @@ function dyad_run_optimized()
     state = DyadSum(Dyad(N, 0, 0))
     nkeep = 2
     v0 = SparseDyadVectors(state, R=nkeep)
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer=3)
+    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer=5)
     println("\n Eigenvalues after SCI")
     display(eig_sci)
 
@@ -368,7 +365,7 @@ function dyad_run_optimized()
             num_1 .+= conj.(d_k_vec) .* Lq_pk_coeff
         end
 
-        # Calculate the denominator: E_i - <<q|L|q>>
+        # Calculate the denominator: λ_i - <<x|L|x>>
         q_vec_vector = SparseDyadVectors(DyadSum(q_dyad), R = nkeep)
         L_q_vector = L * q_vec_vector 
         
@@ -394,5 +391,5 @@ function dyad_run_optimized()
 end
 
 # @btime dyad_run()
-@time matrix_run()
-# @time dyad_run_optimized()
+# @time matrix_run()
+@time dyad_run_new()
