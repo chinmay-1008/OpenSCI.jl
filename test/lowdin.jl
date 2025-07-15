@@ -304,36 +304,36 @@ function dyad_run()
 end
 
 
-function dyad_run_new()
-    N = 5
+function dyad_run_new(L :: Lindbladian{N}; sci_iter=2) where {N}
+    # N = 5
     dim = 2^N
 
     # Setup Lindbladian 
-    L = Lindbladian(N)
-    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
-    add_channel_dephasing!(L, 0.1)
-    add_channel_depolarizing!(L, 0.1)
+    # L = Lindbladian(N)
+    # add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
+    # add_channel_dephasing!(L, 0.1)
+    # add_channel_depolarizing!(L, 0.1)
 
-    Lmat = Matrix(L)
-    dim_L = size(Lmat, 1)
+    # Lmat = Matrix(L)
+    # dim_L = size(Lmat, 1)
     
-    # Exact Diagonalization
-    F = eigen(Lmat)
-    perm = sortperm(F.values, by=real)
-    F.values .= F.values[perm]
-    F.vectors .= F.vectors[:, perm]
-    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
-    @printf(" Eigenvalues of L:\n")
-    for i in (length(F.values) - 2):length(F.values)
-        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
-    end
-    display(size(Lmat))
+    # # Exact Diagonalization
+    # F = eigen(Lmat)
+    # perm = sortperm(F.values, by=real)
+    # F.values .= F.values[perm]
+    # F.vectors .= F.vectors[:, perm]
+    # states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    # @printf(" Eigenvalues of L:\n")
+    # for i in (length(F.values) - 2):length(F.values)
+    #     @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    # end
+    # display(size(Lmat))
 
     # Selected CI
     state = DyadSum(Dyad(N, 0, 0))
     nkeep = 2
     v0 = SparseDyadVectors(state, R=nkeep)
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer=5)
+    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer=sci_iter)
     println("\n Eigenvalues after SCI")
     display(eig_sci)
 
@@ -387,9 +387,52 @@ function dyad_run_new()
     println("\n Corrected Eigenvalue")
     display(corr_eig)
 
-    return
+    return eig_sci[c_idx], corr_eig
+end
+
+function run_plot()
+    N = 5
+    dim = 2^N
+
+    # Setup Lindbladian 
+    L = Lindbladian(N)
+    add_hamiltonian!(L, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
+    add_channel_dephasing!(L, 0.1)
+    add_channel_depolarizing!(L, 0.1)
+
+    Lmat = Matrix(L)
+    dim_L = size(Lmat, 1)
+    
+    # Exact Diagonalization
+    F = eigen(Lmat)
+    perm = sortperm(F.values, by=real)
+    F.values .= F.values[perm]
+    F.vectors .= F.vectors[:, perm]
+    states = [reshape(F.vectors[:,i], 2^N, 2^N)/sqrt(2^N) for i in 1:length(F.values)]
+    @printf(" Eigenvalues of L:\n")
+    for i in (length(F.values) - 2):length(F.values)
+        @printf(" %4i %12.8f %12.8fi Tr = %12.8f\n", i, real(F.values[i]), imag(F.values[i]), real(tr(states[i])))
+    end
+    # display(size(Lmat))
+
+    matrix_form = []
+    dyad_form = []
+
+    for i in 1:8
+        eig_sci, corr = dyad_run_new(L, sci_iter = i)
+        println("\nSCI Eigen")
+        display(eig_sci)
+
+        println("Corrected Eigenvalue")
+        display(corr)
+    end
+
+    
+    return 
 end
 
 # @btime dyad_run()
 # @time matrix_run()
-@time dyad_run_new()
+# @time dyad_run_new(sci_iter = 3)
+
+run_plot()

@@ -86,7 +86,7 @@ end
 
 
 function run()
-    N = 2
+    N = 3
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -128,7 +128,7 @@ function run()
     d_ops = matrix_to_dyad(mat_ops)
 
     # Number of Eigenvectors for SCI
-    nkeep = 5
+    nkeep = 9
 
     v0 = SparseDyadVectors(state, R = nkeep)
     println("SCI started")
@@ -259,13 +259,13 @@ function run()
     legend = false,
     # aspect_ratio = :equal,
     # xlim=(-3, 0.2),
-    ylim=(-1, 1),
+    # ylim=(-1, 1),
     marker = (:circle, 2)
     )
 
 # Combine into subplots
     plot(p1, p2, layout=(1, 2), size=(1000, 400), top_margin=5mm,bottom_margin = 5mm, right_margin=5mm, left_margin=5mm, dpi=300, legendfontsize =4)
-    savefig("test/eig_$N.pdf")
+    savefig("test/eig_$N-new.pdf")
 
     return
 end

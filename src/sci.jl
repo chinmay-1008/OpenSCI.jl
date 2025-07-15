@@ -3,7 +3,7 @@ using OpenSCI
 using Arpack
 
 function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T}; 
-    ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-5,
+    ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-7,
     verbose = 0) where {N,T}
 
     dim, R = size(v)

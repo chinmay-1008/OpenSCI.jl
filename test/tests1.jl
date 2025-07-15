@@ -116,13 +116,17 @@ function run2()
 end
 
 function heisenberg_test()
-    N = 2
+    N = 3
     dim = 2^N
     Λ = Lindbladian(N)
-    add_hamiltonian!(Λ, OpenSCI.heisenberg_1D(N, 1.0, 1.0, 1.0))
+    # add_hamiltonian!(Λ, OpenSCI.heisenberg_1D(N, 1.0, 1.0, 1.0))
     # add_channel_dephasing!(Λ, .2)
-    add_channel_depolarizing!(Λ, .6)
-    add_channel_amplitude_damping!(Λ, .5)
+    # add_channel_depolarizing!(Λ, .6)
+    # add_channel_amplitude_damping!(Λ, .5)
+
+    add_hamiltonian!(Λ, OpenSCI.heisenberg_1D(N, 1.1, 1.2, 1.3))
+    add_channel_dephasing!(Λ, 0.1)
+    add_channel_depolarizing!(Λ, .1)
     # Λ = rand(Lindbladian{N}, nH=10, nL=4)
     println(" Here is our Lindbladian:")
     display(Λ)
@@ -206,50 +210,50 @@ function heisenberg_test()
     end
    
     t = [i for i in sol.t]
-    plt = plot()
-    for ei in λ 
-        # push!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, c=:gray)
-        plot!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, c=:gray)
-    end
+    plt = plot(dpi = 200)
+    # for ei in λ 
+    #     # push!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, c=:gray)
+    #     plot!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, c=:gray)
+    # end
     for (state, pops) in populations_ode
         plot!(t, pops, label = string(state.bra.v+1), c = palette(:tab10)[state.bra.v+1])
     end
     for (state, pops) in populations_eig
         plot!(t, pops, label = string(state.bra.v+1), linestyle=:dash, c = palette(:tab10)[state.bra.v+1])
     end
-    savefig("./plot.pdf")
+    savefig("./plot.png")
     
     return
     
-    t = [i for i in sol.t]
-    plot(t, gs_prob, label = "gs_prob")
-    return
+    # t = [i for i in sol.t]
+    # plot(t, gs_prob, label = "gs_prob")
+    # return
 
 
-    gs_prob = [abs(i[1]*i[1]') for i in sol.u]
-    t = [i for i in sol.t]
-    plot(t, gs_prob, label = "gs_prob")
-    for ei in L_evals[1:5] 
-        println(" ei = ", ei)
-        plot!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, label = "exp(ei*ti)", legend=false)
-    end
+    # gs_prob = [abs(i[1]*i[1]') for i in sol.u]
+    # t = [i for i in sol.t]
+    # plot(t, gs_prob, label = "gs_prob")
+    # for ei in L_evals[1:5] 
+    #     println(" ei = ", ei)
+    #     plot!(t, [abs(exp(ei*ti)) for ti in t], linestyle = :dash, label = "exp(ei*ti)", legend=false)
+    # end
 
-    for i in 1:length(sol.t)
-        ρt = reshape(sol.u[i], (2^N, 2^N))
-        @printf(" tr(ρt) = %12.8f %12.8fi\n", real(tr(ρt)), imag(tr(ρt)))
-    end
-    savefig("./plot.pdf")
+    # for i in 1:length(sol.t)
+    #     ρt = reshape(sol.u[i], (2^N, 2^N))
+    #     @printf(" tr(ρt) = %12.8f %12.8fi\n", real(tr(ρt)), imag(tr(ρt)))
+    # end
+    # savefig("./plot.pdf")
     
-    ρT = reshape(sol.u[end], (2^N, 2^N))
-    println("\n ρT")
-    display(ρT)
-    println("\n eigvals(ρT)")
-    display(eigvals(ρT))
-    println("\n tr(ρT)")
-    display(tr(ρT))
+    # ρT = reshape(sol.u[end], (2^N, 2^N))
+    # println("\n ρT")
+    # display(ρT)
+    # println("\n eigvals(ρT)")
+    # display(eigvals(ρT))
+    # println("\n tr(ρT)")
+    # display(tr(ρT))
 
-    println("\n tr(ρss*ρT)")
-    display(tr(ρss*ρT))
+    # println("\n tr(ρss*ρT)")
+    # display(tr(ρss*ρT))
 end
 
 # run1()
