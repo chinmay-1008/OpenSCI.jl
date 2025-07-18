@@ -50,13 +50,27 @@ function left_eigenvectors(dyad_dict::SparseDyadVectors{N,T}, Lmat)::SparseDyadV
     return dyad_dict
 end
 
+function pinv_sparsedyads(dyad_dict::SparseDyadVectors{N,T})::SparseDyadVectors{N,T} where {N,T}
+    dyad_keys = collect(keys(dyad_dict))                            
+    values_matrix = transpose(hcat(values(dyad_dict)...))           
+
+    pinv_matrix = pinv(values_matrix)                              
+
+    pinv_sdv = OrderedDict{DyadBasis{N}, Vector{T}}()
+    for i in eachindex(dyad_keys)
+        pinv_sdv[dyad_keys[i]] = vec(pinv_matrix[:, i])           
+    end
+
+    return pinv_sdv
+end
+
 function run_sci(L:: Lindbladian{N}; sci_iter = 2) where {N}
     
     state = DyadSum(Dyad(N, 0, 0))
     nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, max_iter_outer = sci_iter)
+    p_dyad, eig_sci = selected_ci(L, v0, ϵdiscard=1e-3, max_iter_outer = sci_iter)
 
     return p_dyad, eig_sci
 end 
@@ -99,14 +113,17 @@ function run_matrix_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_
     # new_eig = e[end-nkeep+1:end]
     # display(new_eig)
 
-    # println("\n Using SCI eigenvector")
+    println("\n Using SCI eigenvector")
     # Getting the left eigenvectors
-    left_eigen = left_eigenvectors(p_dyad, lmat_pp)
-    vec_left = Matrix(left_eigen)
-    # display((vec_left[:, corr_idx])' * vec_p_dyad[:, corr_idx])
-    sci_vec = (vec_left[:, corr_idx])' * leff * vec_p_dyad[:, corr_idx] 
+    # left_eigen = left_eigenvectors(p_dyad, lmat_pp)
+    # vec_left = Matrix(left_eigen)
 
-    # sci_vec = transpose(vec_left[:, corr_idx]) * leff * vec_p_dyad[:, corr_idx] # not a conjugate here as well
+    left_eigen = pinv_sparsedyads(p_dyad)
+    vec_left = Matrix(left_eigen)
+    # display(transpose(vec_left[:, corr_idx]) * vec_p_dyad[:, corr_idx])
+    # sci_vec = (vec_left[:, corr_idx])' * leff * vec_p_dyad[:, corr_idx] 
+
+    sci_vec = transpose(vec_left[:, corr_idx]) * leff * vec_p_dyad[:, corr_idx] # not a conjugate here
     # display(sci_vec)
 
     return sci_vec
@@ -115,10 +132,10 @@ end
 
 function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sci :: Union{ComplexF64, Float64}, corr_idx :: Int64) where {N, T}
     dim, nkeep = size(p_dyad)
-    # Get the component of L*|V>> in the external space Q
+    # Get the component of L*|v_i>> in the external space Q
     x_temp = L * p_dyad
     x_dyad = SparseDyadVectors(DyadSum(N), R=nkeep)
-    # This represents <<q|L|v_i>>
+    # This represents |q>><<q|L|v_i>>
     for (d, coeff) in x_temp
         if !haskey(p_dyad, d)
             sum!(x_dyad, d, coeff)
@@ -126,7 +143,8 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
     end
 
     # Get the left eigenvectors <<W_i| of the projected Lindbladian P*L*P
-    left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
+    # left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
+    left_p_dyad = pinv_sparsedyads(p_dyad)
 
     correction_vec = zeros(ComplexF64, nkeep)
     
@@ -140,7 +158,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
         num_1 = vec(num_1)
         for (p_k, d_k_vec) in left_p_dyad
             Lq_pk_coeff = get(L_q_scalar, p_k, 0.0 + 0im)
-            num_1 .+= conj.(d_k_vec) .* Lq_pk_coeff
+            num_1 .+= (d_k_vec) .* Lq_pk_coeff
         end
 
         # Calculate the denominator: λ_i - <<x|L|x>>
@@ -149,11 +167,10 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
         L_q_vector = L * q_vec_vector 
         
         denominator_diag_vec = get(L_q_vector, q_dyad, vec(zeros(ComplexF64, nkeep)))
-        threshold = 1e-10
-        display(denominator_diag_vec)
+        # threshold = 1e-10
         
         # Replace small values with threshold (element-wise)
-        denominator_diag_vec .= ifelse.(abs.(denominator_diag_vec) .< threshold, threshold, denominator_diag_vec)
+        # denominator_diag_vec .= ifelse.(abs.(denominator_diag_vec) .< threshold, threshold, denominator_diag_vec)
         energy_diff_vec = eig_sci .- denominator_diag_vec
 
         term_vec = (num_1 .* coeff) ./ energy_diff_vec
@@ -169,7 +186,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 end
 
 function run()
-    N = 4
+    N = 6
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -197,7 +214,7 @@ function run()
 
     display(size(Lmat))  
 
-    sci_iters = 2:2
+    sci_iters = 3:12
     corr_idx = 2
     exact_eig = F.values[end - (2 - corr_idx)]  
     
@@ -221,17 +238,18 @@ function run()
         # push!(matrix_errors, real(lambda_matrix))
         # push!(dyad_errors,real(lambda_dyad) )
 
-        println("\n Eigenvalue SCI")
+        println("\n Error in Eigenvalue SCI")
         display(sci_errors)
 
-        println("\n Eigenvalue after Lowdin (MATRIX)")
+        println("\n Error in Eigenvalue after Lowdin (MATRIX)")
         display(matrix_errors)
 
-        println("\n Eigenvalue after Lowdin (DYAD)")
+        println("\n Error in Eigenvalue after Lowdin (DYAD)")
         display(dyad_errors)
 
     end
     # Plot
+    lambda_idx = 2-corr_idx
     plot(
         sci_iters, sci_errors;
         label = "SCI",
@@ -240,7 +258,7 @@ function run()
         # yscale = :log10,
         xlabel = "SCI Iteration",
         ylabel = "Absolute Error",
-        title = "Error vs SCI Iteration of λ_$corr_idx",
+        title = "Error vs SCI Iteration of λ_$lambda_idx",
         grid = true,
         dpi = 150
     )    
