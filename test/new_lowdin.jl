@@ -70,7 +70,7 @@ function run_sci(L:: Lindbladian{N}; sci_iter = 2) where {N}
     nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, ϵdiscard=1e-3, max_iter_outer = sci_iter)
+    p_dyad, eig_sci = selected_ci(L, v0, ϵdiscard=1e-5, max_iter_outer = sci_iter)
 
     return p_dyad, eig_sci
 end 
@@ -186,7 +186,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 end
 
 function run()
-    N = 6
+    N = 4
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -214,8 +214,8 @@ function run()
 
     display(size(Lmat))  
 
-    sci_iters = 3:12
-    corr_idx = 2
+    sci_iters = 1:8
+    corr_idx = 1
     exact_eig = F.values[end - (2 - corr_idx)]  
     
     sci_errors = Float64[]
@@ -233,6 +233,10 @@ function run()
         push!(sci_errors, abs(real(lambda_sci) - real(exact_eig)))
         push!(matrix_errors, abs(real(lambda_matrix) - real(exact_eig)))
         push!(dyad_errors, abs(real(lambda_dyad) - real(exact_eig)))
+  
+        # push!(sci_errors, abs((lambda_sci) - (exact_eig)))
+        # push!(matrix_errors, abs((lambda_matrix) - (exact_eig)))
+        # push!(dyad_errors, abs((lambda_dyad) - (exact_eig)))
 
         # push!(sci_errors, real(lambda_sci))
         # push!(matrix_errors, real(lambda_matrix))
