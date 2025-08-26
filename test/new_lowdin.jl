@@ -70,7 +70,7 @@ function run_sci(L:: Lindbladian{N}; sci_iter = 2) where {N}
     nkeep = 2
     v0 = SparseDyadVectors(state, R = nkeep)
 
-    p_dyad, eig_sci = selected_ci(L, v0, ϵdiscard=1e-5, max_iter_outer = sci_iter)
+    p_dyad, eig_sci = selected_ci(L, v0, ϵdiscard=1e-4, max_iter_outer = sci_iter)
 
     return p_dyad, eig_sci
 end 
@@ -134,6 +134,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
     dim, nkeep = size(p_dyad)
     # Get the component of L*|v_i>> in the external space Q
     x_temp = L * p_dyad
+
     x_dyad = SparseDyadVectors(DyadSum(N), R=nkeep)
     # This represents |q>><<q|L|v_i>>
     for (d, coeff) in x_temp
@@ -142,12 +143,14 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
         end
     end
 
+
+
     # Get the left eigenvectors <<W_i| of the projected Lindbladian P*L*P
     # left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
     left_p_dyad = pinv_sparsedyads(p_dyad)
 
     correction_vec = zeros(ComplexF64, nkeep)
-    
+    println("\n Q space size: ", size(x_dyad))
     for (q_dyad, coeff) in x_dyad
         
         # Applying L to |q>> and projecting onto the left eigenvectors <<W_i|.
@@ -167,10 +170,10 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
         L_q_vector = L * q_vec_vector 
         
         denominator_diag_vec = get(L_q_vector, q_dyad, vec(zeros(ComplexF64, nkeep)))
-        # threshold = 1e-10
+        threshold = 1e-10
         
         # Replace small values with threshold (element-wise)
-        # denominator_diag_vec .= ifelse.(abs.(denominator_diag_vec) .< threshold, threshold, denominator_diag_vec)
+        denominator_diag_vec .= ifelse.(abs.(denominator_diag_vec) .< threshold, threshold, denominator_diag_vec)
         energy_diff_vec = eig_sci .- denominator_diag_vec
 
         term_vec = (num_1 .* coeff) ./ energy_diff_vec
@@ -186,7 +189,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 end
 
 function run()
-    N = 4
+    N = 6
     dim = 2^N
 
     # Initializing the Lindbladian
@@ -214,7 +217,7 @@ function run()
 
     display(size(Lmat))  
 
-    sci_iters = 1:8
+    sci_iters = 1:9
     corr_idx = 1
     exact_eig = F.values[end - (2 - corr_idx)]  
     
@@ -223,6 +226,7 @@ function run()
     dyad_errors = Float64[]
     
     for iter in sci_iters
+        println("\n SCI ITERATION CAP: ", iter)
         p_dyad, eig_sci = run_sci(L, sci_iter = iter)
         lambda_sci = eig_sci[corr_idx]
     
@@ -230,46 +234,46 @@ function run()
         
         lambda_dyad = run_dyad_form(L, p_dyad, lambda_sci, corr_idx)
     
-        push!(sci_errors, abs(real(lambda_sci) - real(exact_eig)))
-        push!(matrix_errors, abs(real(lambda_matrix) - real(exact_eig)))
-        push!(dyad_errors, abs(real(lambda_dyad) - real(exact_eig)))
+        # push!(sci_errors, abs(real(lambda_sci) - real(exact_eig)))
+        # push!(matrix_errors, abs(real(lambda_matrix) - real(exact_eig)))
+        # push!(dyad_errors, abs(real(lambda_dyad) - real(exact_eig)))
   
-        # push!(sci_errors, abs((lambda_sci) - (exact_eig)))
-        # push!(matrix_errors, abs((lambda_matrix) - (exact_eig)))
-        # push!(dyad_errors, abs((lambda_dyad) - (exact_eig)))
+        push!(sci_errors, abs((lambda_sci) - (exact_eig)))
+        push!(matrix_errors, abs((lambda_matrix) - (exact_eig)))
+        push!(dyad_errors, abs((lambda_dyad) - (exact_eig)))
 
         # push!(sci_errors, real(lambda_sci))
         # push!(matrix_errors, real(lambda_matrix))
         # push!(dyad_errors,real(lambda_dyad) )
 
         println("\n Error in Eigenvalue SCI")
-        display(sci_errors)
+        display(lambda_sci - exact_eig)
 
-        println("\n Error in Eigenvalue after Lowdin (MATRIX)")
-        display(matrix_errors)
+        # println("\n Error in Eigenvalue after Lowdin (MATRIX)")
+        # display(matrix_errors)
 
         println("\n Error in Eigenvalue after Lowdin (DYAD)")
-        display(dyad_errors)
+        display(lambda_dyad - exact_eig)
 
     end
-    # Plot
-    lambda_idx = 2-corr_idx
-    plot(
-        sci_iters, sci_errors;
-        label = "SCI",
-        lw = 2,
-        marker = :circle,
-        # yscale = :log10,
-        xlabel = "SCI Iteration",
-        ylabel = "Absolute Error",
-        title = "Error vs SCI Iteration of λ_$lambda_idx",
-        grid = true,
-        dpi = 150
-    )    
-    plot!(sci_iters, matrix_errors; label = "Löwdin (Matrix)", lw = 2, marker = :square)
-    plot!(sci_iters, dyad_errors; label = "Löwdin (Dyad)", lw = 2, marker = :diamond)
+    # # Plot
+    # lambda_idx = 2-corr_idx
+    # plot(
+    #     sci_iters, sci_errors;
+    #     label = "SCI",
+    #     lw = 2,
+    #     marker = :circle,
+    #     # yscale = :log10,
+    #     xlabel = "SCI Iteration",
+    #     ylabel = "Absolute Error",
+    #     title = "Error vs SCI Iteration of λ_$lambda_idx",
+    #     grid = true,
+    #     dpi = 150
+    # )    
+    # # plot!(sci_iters, matrix_errors; label = "Löwdin (Matrix)", lw = 2, marker = :square)
+    # plot!(sci_iters, dyad_errors; label = "Löwdin (Dyad)", lw = 2, marker = :diamond)
 
-    savefig("test/corr_lowdin_$N-matrix-$corr_idx.png")
+    # savefig("test/corr_lowdin_$N-matrix-$corr_idx.png")
 
 end    
 

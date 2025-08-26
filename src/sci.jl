@@ -33,10 +33,13 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
         v = zeros(T,size(Pv))
         # println()
         display(size(Pv))
-        if length(Pv) < 300
+        if length(Pv) < 3000
             e,v = eigen(Lmat)
-            e = e[end-R+1:end]
-            v = v[:, end-R+1:end]
+            # e = e[end-R+1:end]
+            # v = v[:, end-R+1:end]
+            perm = sortperm(real(e))
+            e = e[perm[end-R+1:end]]
+            v = v[:, perm[end-R+1:end]]
             
             println("Eigen")
         else
@@ -47,9 +50,6 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
             v = v[:, perm]
         end
         
-        # perm = sortperm(real(e))
-        # e = e[perm[end-R+1:end]]
-        # v = v[:, perm[end-R+1:end]]
         
         fill!(Pv, v)
         if verbose > 1
