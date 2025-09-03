@@ -26,7 +26,7 @@ end
 Multiplication of L with A, which is either a PauliSum or a DyadSum
 """
 function Base.:*(L::Lindbladian{N}, ρ) where {N}
-    dρ = -1im * (L.H*ρ + -ρ*L.H)
+    dρ = -1im * (L.H*ρ - ρ*L.H)
     for i in 1:length(L.γ)
         Li = L.L[i]
         dρ += L.γ[i] * ((Li * ρ) * Li')
@@ -57,18 +57,21 @@ U(ij,k) = tr(|i><j| * Pk)
 - `N::Integer`: the number of qubits
 """
 function Dyad2Pauli_rotation(N)
+    dim = 2^N
     U = zeros(ComplexF64, (4^N, 4^N))
-    for k in 0:2^N-1 
-        for b in 0:2^N-1 
+    normalization = sqrt(dim)
+    for k in 0:dim-1 
+        for b in 0:dim-1 
             d = Dyad(N,k,b)
-            for z in 0:2^N-1 
-                for x in 0:2^N-1 
-                    p = PauliBasis(N,z,x)
-                    U[index(d), index(p)] = tr(d*p)
+            for z in 0:dim-1 
+                for x in 0:dim-1 
+                    p = Pauli(z,x, N)
+                    U[index(d), index(p)] = tr(d*p)/normalization
                 end
             end
         end
     end
+    return U
 end
 
 """

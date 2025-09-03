@@ -2,7 +2,7 @@ using PauliOperators
 using OpenSCI
 using Arpack
 
-function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T}; 
+function selected_ci(L::Lindbladian{N}, v::SparsePauliVectors{N,T}; 
     ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-7,
     verbose = 0) where {N,T}
 
@@ -13,13 +13,12 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
 
     Pv= deepcopy(v)
     e = 0
-    # v = 
     for n_iter in 1:max_iter_outer
         @printf("\n ####################################")
         @printf("\n SCI Iteration: %4i \n", n_iter)
         clip!(Pv, thresh=ϵdiscard)
 
-        display("P---DYAD")
+        display("P---PAULI")
         display(size(Pv))
 
         σ = multiply(L, Pv, ϵ=ϵsearch)
@@ -31,7 +30,7 @@ function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T};
             end
         end
 
-        println("NEW-PDYAD")
+        println("NEW-PPAULI")
         display(size(Pv))
         Lmat = build_subspace_L(L, Pv)
         e = 0
@@ -92,33 +91,33 @@ function prepare_lindblad_cache(L::Lindbladian{N}) where {N}
     return [(Li, Li' * Li) for Li in L.L]
 end
 
-function multiply(L::Lindbladian{N}, ρ::SparseDyadVectors{N,T}; ϵ=1e-16) where {N,T}
-    σ = SparseDyadVectors{N,T}()
+function multiply(L::Lindbladian{N}, ρ::SparsePauliVectors{N,T}; ϵ=1e-16) where {N,T}
+    σ = SparsePauliVectors{N,T}()
 
     L_dat = prepare_lindblad_cache(L)
     # Unitary part
-    for (rdyad, rcoeffs) in ρ
-        σi = DyadSum(N)
-        σi += -1im * (L.H * rdyad - rdyad * L.H)
+    for (rpauli, rcoeffs) in ρ
+        σi = PauliSum(N)
+        σi += -1im * (L.H * rpauli - rpauli * L.H)
 
         for i in 1:length(L.γ)
             # Li = L.L[i]
             # LL = Li' * Li
             Li, LL = L_dat[i]
             
-            σi +=  L.γ[i] * (Li * rdyad * Li')
-            σi -= 0.5*L.γ[i]*(LL*rdyad + rdyad*LL)
+            σi +=  L.γ[i] * (Li * rpauli * Li')
+            σi -= 0.5*L.γ[i]*(LL*rpauli + rpauli*LL)
         end
         
-        for (ldyad,lcoeff) in σi 
-            sum!(σ, ldyad, lcoeff .* rcoeffs )
+        for (lpauli,lcoeff) in σi 
+            sum!(σ, lpauli, lcoeff .* rcoeffs )
         end
     end
     return σ 
 end
 
 
-function selected_ci_first_correction(L::Lindbladian{N}, v::SparseDyadVectors{N,T}; 
+function selected_ci_first_correction(L::Lindbladian{N}, v::SparsePauliVectors{N,T}; 
     ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-7,
     verbose = 0) where {N,T}
 
@@ -141,7 +140,7 @@ function selected_ci_first_correction(L::Lindbladian{N}, v::SparseDyadVectors{N,
 
         v = zeros(T,size(Pv))
 
-        x_dyad = SparseDyadVectors(DyadSum(N), R=R)
+        x_dyad = SparsePauliVectors(PauliSum(N), R=R)
         # This represents |q>><<q|L|v_i>>
         for (d, coeff) in σ
             if !haskey(Pv, d)
@@ -151,7 +150,7 @@ function selected_ci_first_correction(L::Lindbladian{N}, v::SparseDyadVectors{N,
 
         if n_iter > 1
             for (d, c) in x_dyad
-                one_x_dyad = SparseDyadVectors(DyadSum(d), R = R)
+                one_x_dyad = SparsePauliVectors(PauliSum(d), R = R)
                 one_x_dyad[d] = c
                 temp = L * one_x_dyad
 
@@ -225,13 +224,13 @@ function selected_ci_first_correction(L::Lindbladian{N}, v::SparseDyadVectors{N,
 end
 
 
-function Base.:*(L::Lindbladian{N}, ρ::SparseDyadVectors{N,T}) where {N,T}
+function Base.:*(L::Lindbladian{N}, ρ::SparsePauliVectors{N,T}) where {N,T}
     return multiply(L,ρ)
 end
 
-function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N,T}
+function build_subspace_L(L::Lindbladian{N}, v::SparsePauliVectors{N,T}) where {N,T}
    
-    indices = Dict{DyadBasis{N}, Int}()
+    indices = Dict{PauliBasis{N}, Int}()
     idx = 1
     for (d,c) in v
         indices[d] = idx
@@ -244,19 +243,19 @@ function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N
 
     vi = 0
     # Unitary part
-    for rdyad in keys(v)
-        vi = indices[rdyad] 
+    for rpauli in keys(v)
+        vi = indices[rpauli] 
 
         for (pauli, coefficient) in L.H
             
-            ldyad = coefficient * (pauli * rdyad)
-            if haskey(v, DyadBasis(ldyad)) 
-                Lmat[indices[DyadBasis(ldyad)], vi] += -1im * coeff(ldyad)
+            lpauli = coefficient * (pauli * rpauli)
+            if haskey(v, PauliBasis(lpauli)) 
+                Lmat[indices[PauliBasis(lpauli)], vi] += -1im * coeff(lpauli)
             end
             
-            ldyad = coefficient * (rdyad * pauli)
-            if haskey(v, DyadBasis(ldyad)) 
-                Lmat[indices[DyadBasis(ldyad)], vi] += 1im * coeff(ldyad)
+            lpauli = coefficient * (rpauli * pauli)
+            if haskey(v, PauliBasis(lpauli)) 
+                Lmat[indices[PauliBasis(lpauli)], vi] += 1im * coeff(lpauli)
             end
         end
 
@@ -268,19 +267,19 @@ function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N
                     Pj = pj * cj
                     Pk = pk * ck
 
-                    ldyad = γ * (Pj * rdyad * Pk')
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] += coeff(ldyad)
+                    lpauli = γ * (Pj * rpauli * Pk')
+                    if haskey(v, PauliBasis(lpauli)) 
+                        Lmat[indices[PauliBasis(lpauli)], vi] += coeff(lpauli)
                     end
                     
-                    ldyad = γ * (rdyad * Pj' * Pk)
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    lpauli = γ * (rpauli * Pj' * Pk)
+                    if haskey(v, PauliBasis(lpauli)) 
+                        Lmat[indices[PauliBasis(lpauli)], vi] -= .5 * coeff(lpauli)
                     end
                     
-                    ldyad = γ * (Pj' * Pk * rdyad)
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    lpauli = γ * (Pj' * Pk * rpauli)
+                    if haskey(v, PauliBasis(lpauli)) 
+                        Lmat[indices[PauliBasis(lpauli)], vi] -= .5 * coeff(lpauli)
                     end
                 end
             end
@@ -289,9 +288,9 @@ function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N
     return Lmat 
 end
 
-function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVectors{N,T}, v_col::SparseDyadVectors{N, T}) where {N,T}
-    row_indices = Dict{DyadBasis{N}, Int}()
-    col_indices = Dict{DyadBasis{N}, Int}()
+function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparsePauliVectors{N,T}, v_col::SparsePauliVectors{N, T}) where {N,T}
+    row_indices = Dict{PauliBasis{N}, Int}()
+    col_indices = Dict{PauliBasis{N}, Int}()
 
     for (i, (d,c)) in enumerate(v_row)
         row_indices[d] = i
@@ -308,19 +307,19 @@ function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVector
 
     vi = 0
     # Unitary part
-    for rdyad in keys(v_col)
-        vi = col_indices[rdyad] 
+    for rpauli in keys(v_col)
+        vi = col_indices[rpauli] 
 
         for (pauli, coefficient) in L.H
             
-            ldyad = coefficient * (pauli * rdyad)
-            if haskey(row_indices, DyadBasis(ldyad)) 
-                Lmat[row_indices[DyadBasis(ldyad)], vi] += -1im * coeff(ldyad)
+            lpauli = coefficient * (pauli * rpauli)
+            if haskey(row_indices, PauliBasis(lpauli)) 
+                Lmat[row_indices[PauliBasis(lpauli)], vi] += -1im * coeff(lpauli)
             end
             
-            ldyad = coefficient * (rdyad * pauli)
-            if haskey(row_indices, DyadBasis(ldyad)) 
-                Lmat[row_indices[DyadBasis(ldyad)], vi] += 1im * coeff(ldyad)
+            lpauli = coefficient * (rpauli * pauli)
+            if haskey(row_indices, PauliBasis(lpauli)) 
+                Lmat[row_indices[PauliBasis(lpauli)], vi] += 1im * coeff(lpauli)
             end
         end
 
@@ -332,19 +331,19 @@ function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVector
                     Pj = pj * cj
                     Pk = pk * ck
 
-                    ldyad = γ * (Pj * rdyad * Pk')
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] += coeff(ldyad)
+                    lpauli = γ * (Pj * rpauli * Pk')
+                    if haskey(row_indices, PauliBasis(lpauli)) 
+                        Lmat[row_indices[PauliBasis(lpauli)], vi] += coeff(lpauli)
                     end
                     
-                    ldyad = γ * (rdyad * Pj' * Pk)
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    lpauli = γ * (rpauli * Pj' * Pk)
+                    if haskey(row_indices, PauliBasis(lpauli)) 
+                        Lmat[row_indices[PauliBasis(lpauli)], vi] -= .5 * coeff(lpauli)
                     end
                     
-                    ldyad = γ * (Pj' * Pk * rdyad)
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
+                    lpauli = γ * (Pj' * Pk * rpauli)
+                    if haskey(row_indices, PauliBasis(lpauli)) 
+                        Lmat[row_indices[PauliBasis(lpauli)], vi] -= .5 * coeff(lpauli)
                     end
                 end
             end
@@ -354,7 +353,7 @@ function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVector
 end
 
 
-function Base.fill!(sdv::SparseDyadVectors{N,T}, m::Matrix{T}) where {N,T}
+function Base.fill!(sdv::SparsePauliVectors{N,T}, m::Matrix{T}) where {N,T}
     size(sdv) == size(m) || throw(DimensionMismatch)
 
     ridx = 0
@@ -365,13 +364,13 @@ function Base.fill!(sdv::SparseDyadVectors{N,T}, m::Matrix{T}) where {N,T}
     return sdv
 end
 
-function PauliOperators.clip!(sdv::SparseDyadVectors; thresh=1e-5)
+function PauliOperators.clip!(sdv::SparsePauliVectors; thresh=1e-5)
     filter!(p->maximum(abs2.(p.second)) > thresh, sdv)
     return sdv
 end
 
 
-# function sparse_lindbladian_eigensolve(L::Lindbladian, v0::SparseDyadVectors)
+# function sparse_lindbladian_eigensolve(L::Lindbladian, v0::SparsePauliVectors)
 #     Lmat = Matrix(L)
 #     l = eigvals(Lmat)
 #     @printf("\n Eigenvalues of Lmat:\n")
