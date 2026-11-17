@@ -157,7 +157,7 @@ function run()
 
     # Initializing the left and right eigenvectors
     vi = final_state
-    wi = pinv_sparsedyads(vi)
+    wi = left_eigenvectors(L, vi)
 
     mat_vi = Matrix(todense(vi))
 

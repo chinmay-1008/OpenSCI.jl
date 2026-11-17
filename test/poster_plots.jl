@@ -164,7 +164,7 @@ function run_eig(;N = 2)
     v0 = SparseDyadVectors(state, R = nkeep)
     p_dyad, ei = selected_ci(L, v0, ϵdiscard=1e-4, max_iter_outer = 10)
     vi = p_dyad
-    wi = pinv_sparsedyads(vi)
+    wi = left_eigenvectors(L, vi)
     dim_1, R_1 = size(p_dyad)
     # display((todense(wi))' * todense(wi))
     # display(vi)

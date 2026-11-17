@@ -29,26 +29,7 @@ function sparse_vec(v::SparseDyadVectors{N, T}) where {N, T}
     return sparse_v
 end
 
-function left_eigenvectors(dyad_dict::SparseDyadVectors{N,T}, Lmat)::SparseDyadVectors{N,T} where {N,T}
-          
-    e = 0
-    v = zeros(T,size(dyad_dict))
-    Ladj = Lmat'
-    dim, R = size(dyad_dict)
-    if length(dyad_dict) < 300
-        e,v = eigen(Ladj)
-        e = e[end-R+1:end]
-        v = v[:, end-R+1:end]
-    else
-        e,v = eigs(Ladj, nev=R, v0=Matrix(dyad_dict)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
-        perm = sortperm(real(e))
-        e = e[perm]
-        v = v[:, perm]
-    end
-    
-    OpenSCI.fill!(dyad_dict, v)
-    return dyad_dict
-end
+# left_eigenvectors(L, v) now lives in src/left_eigenvectors.jl (biorthogonal; does not overwrite v)
 
 function pinv_sparsedyads(dyad_dict::SparseDyadVectors{N,T})::SparseDyadVectors{N,T} where {N,T}
     dyad_keys = collect(keys(dyad_dict))                            
@@ -118,7 +99,7 @@ function run_matrix_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_
     # left_eigen = left_eigenvectors(p_dyad, lmat_pp)
     # vec_left = Matrix(left_eigen)
 
-    left_eigen = pinv_sparsedyads(p_dyad)
+    left_eigen = left_eigenvectors(L, p_dyad)
     vec_left = Matrix(left_eigen)
     # display(transpose(vec_left[:, corr_idx]) * vec_p_dyad[:, corr_idx])
     # sci_vec = (vec_left[:, corr_idx])' * leff * vec_p_dyad[:, corr_idx] 
@@ -146,8 +127,8 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 
 
     # Get the left eigenvectors <<W_i| of the projected Lindbladian P*L*P
-    # left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
-    left_p_dyad = pinv_sparsedyads(p_dyad)
+    # left_p_dyad = left_eigenvectors(L, p_dyad)
+    left_p_dyad = left_eigenvectors(L, p_dyad)
 
     correction_vec = zeros(ComplexF64, nkeep)
     println("\n Q space size: ", size(x_dyad))
@@ -166,7 +147,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 
         # Calculate the denominator: λ_i - <<x|L|x>>
         q_vec_vector = SparseDyadVectors(DyadSum(q_dyad), R = nkeep)
-        q_vec_vector[q_dyad] = [1, 1]
+        q_vec_vector[q_dyad] = ones(ComplexF64, nkeep)
         L_q_vector = L * q_vec_vector 
         
         denominator_diag_vec = get(L_q_vector, q_dyad, vec(zeros(ComplexF64, nkeep)))

@@ -162,26 +162,7 @@ function matrix_run()
     return
 end
 
-function left_eigenvectors(dyad_dict::SparseDyadVectors{N,T}, Lmat)::SparseDyadVectors{N,T} where {N,T}
-          
-    e = 0
-    v = zeros(T,size(dyad_dict))
-    Lmat = Lmat'
-    dim, R = size(dyad_dict)
-    if length(dyad_dict) < 300
-        e,v = eigen(Lmat)
-        e = e[end-R+1:end]
-        v = v[:, end-R+1:end]
-    else
-        e,v = eigs(Lmat, nev=R, v0=Matrix(dyad_dict)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
-        perm = sortperm(real(e))
-        e = e[perm]
-        v = v[:, perm]
-    end
-    
-    OpenSCI.fill!(dyad_dict, v)
-    return dyad_dict
-end
+# left_eigenvectors(L, v) now lives in src/left_eigenvectors.jl (biorthogonal; does not overwrite v)
 
 
 function dyad_run()
@@ -255,7 +236,7 @@ function dyad_run()
 
     
     # here we get the <<w_i| P * L * Q
-    left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
+    left_p_dyad = left_eigenvectors(L, p_dyad)
 
     gamma_coeffs = SparseDyadVectors(DyadSum(N), R=nkeep)
 
@@ -348,7 +329,7 @@ function dyad_run_new(L :: Lindbladian{N}; sci_iter=2) where {N}
     end
 
     # Get the left eigenvectors <<W_i| of the projected Lindbladian P*L*P
-    left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
+    left_p_dyad = left_eigenvectors(L, p_dyad)
 
     correction_vec = zeros(ComplexF64, nkeep)
     

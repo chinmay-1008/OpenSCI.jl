@@ -64,7 +64,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 
     # Get the left eigenvectors <<W_i| of the projected Lindbladian P*L*P
     # left_p_dyad = left_eigenvectors(p_dyad, build_subspace_L(L, p_dyad))
-    left_p_dyad = pinv_sparsedyads(p_dyad)
+    left_p_dyad = left_eigenvectors(L, p_dyad)  # biorthogonal left eigvecs of L_PP (pinv(V) is not one)
 
     correction_vec = zeros(ComplexF64, nkeep)
     println("\n Q space size: ", size(x_dyad))
@@ -85,7 +85,7 @@ function run_dyad_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_sc
 
         # Calculate the denominator: λ_i - <<x|L|x>>
         q_vec_vector = SparseDyadVectors(DyadSum(q_dyad), R = nkeep)
-        q_vec_vector[q_dyad] = [1, 1]
+        q_vec_vector[q_dyad] = ones(ComplexF64, nkeep)
         L_q_vector = L * q_vec_vector 
         
         denominator_diag_vec = get(L_q_vector, q_dyad, vec(zeros(ComplexF64, nkeep)))
@@ -151,7 +151,7 @@ function run_matrix_form(L::Lindbladian{N}, p_dyad::SparseDyadVectors{N,T}, eig_
     # left_eigen = left_eigenvectors(p_dyad, lmat_pp)
     # vec_left = Matrix(left_eigen)
 
-    left_eigen = pinv_sparsedyads(p_dyad)
+    left_eigen = left_eigenvectors(L, p_dyad)
     vec_left = Matrix(left_eigen)
     # display(transpose(vec_left[:, corr_idx]) * vec_p_dyad[:, corr_idx])
     # sci_vec = (vec_left[:, corr_idx])' * leff * vec_p_dyad[:, corr_idx] 

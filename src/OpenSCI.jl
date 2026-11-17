@@ -1,6 +1,7 @@
 module OpenSCI
 
 using PauliOperators
+import PauliOperators: PauliSum, DyadSum, evolve
 using LinearAlgebra
 using Printf
 using LinearMaps
@@ -18,6 +19,7 @@ include("Hamiltonians.jl")
 include("function_dot.jl")
 include("index.jl")
 include("sci_pauli.jl")
+include("left_eigenvectors.jl")
 
 export Lindbladian
 export SubspaceDissipator 
@@ -36,5 +38,6 @@ export index
 export evolve
 export build_subspace_L_generalized
 export SparsePauliVectors
+export left_eigenvectors
 
 end

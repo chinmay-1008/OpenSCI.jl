@@ -87,9 +87,7 @@ function selected_ci(L::Lindbladian{N}, v::SparsePauliVectors{N,T};
 end
 
 
-function prepare_lindblad_cache(L::Lindbladian{N}) where {N}
-    return [(Li, Li' * Li) for Li in L.L]
-end
+# prepare_lindblad_cache is defined in sci.jl
 
 function multiply(L::Lindbladian{N}, ρ::SparsePauliVectors{N,T}; ϵ=1e-16) where {N,T}
     σ = SparsePauliVectors{N,T}()
