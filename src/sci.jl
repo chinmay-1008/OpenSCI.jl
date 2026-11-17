@@ -1,381 +1,101 @@
-using PauliOperators
-using OpenSCI
-using Arpack
+"""
+    SCIResult{K}
 
-function selected_ci(L::Lindbladian{N}, v::SparseDyadVectors{N,T}; 
-    ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-7,
-    verbose = 0) where {N,T}
+Outcome of [`selected_ci`](@ref) (or of one of its iterations).
 
-    dim, R = size(v)
-    # display(v)
-    # @show size(v)
-    last = deepcopy(v)
-
-    Pv= deepcopy(v)
-    e = 0
-    # v = 
-    for n_iter in 1:max_iter_outer
-        @printf("\n ####################################")
-        @printf("\n SCI Iteration: %4i \n", n_iter)
-        clip!(Pv, thresh=ϵdiscard)
-
-        display("P---DYAD")
-        display(size(Pv))
-
-        σ = multiply(L, Pv, ϵ=ϵsearch)
-
-        for (d,c) in σ
-            if maximum(abs2.(c)) > ϵdiscard
-                sum!(Pv, d, zeros(T, R))
-            else
-            end
-        end
-
-        println("NEW-PDYAD")
-        display(size(Pv))
-        Lmat = build_subspace_L(L, Pv)
-        e = 0
-        v = zeros(T,size(Pv))
-        # println()
-        # display(size(Pv))
-        if length(Pv) < 3000
-            e,v = eigen(Lmat)
-            # e = e[end-R+1:end]
-            # v = v[:, end-R+1:end]
-            perm = sortperm(real(e))
-            e = e[perm[end-R+1:end]]
-            v = v[:, perm[end-R+1:end]]
-            
-            println("Eigen")
-        else
-            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
-            println("Eigs")
-            perm = sortperm(real(e))
-            e = e[perm]
-            v = v[:, perm]
-        end
-        
-        
-        fill!(Pv, v)
-        if verbose > 1
-            display(Pv'*last)
-        end
-
-        ovlap = Pv'*last
-
-        # @printf("Eigenvalues of Lmat:\n")
-        # # display(e)
-        # # println("############")
-        # for i in eachindex(e)
-        #     @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
-        # end
-
-
-        if length(Pv) == length(last)
-            tmp1 = Matrix(Pv)
-
-            tmp2 = Matrix(last)
-            ovlap = pinv(tmp1)*tmp2
-            if abs(1 - det(ovlap)) < thresh_conv 
-                @printf(" *Converged\n")
-                break
-            end
-        end
-        
-        last = deepcopy(Pv)
-    end
-    return Pv, e
+- `basis::Vector{K}`: the selected P space (`DyadBasis` or `PauliBasis` keys)
+- `λ`: the `R` eigenvalues of `L_PP` with largest real part, sorted by decreasing real part
+  (so `λ[1]` is the steady state, `λ[2]` the slowest decaying mode, ...)
+- `V`: right eigenvectors (`length(basis) × R`)
+- `W`: biorthogonal left eigenvectors (`R × length(basis)`), `W*V = I`
+- `iteration`, `converged`
+"""
+struct SCIResult{K}
+    basis::Vector{K}
+    pos::Dict{K,Int}
+    λ::Vector{ComplexF64}
+    V::Matrix{ComplexF64}
+    W::Matrix{ComplexF64}
+    iteration::Int
+    converged::Bool
 end
 
+Base.length(r::SCIResult) = length(r.basis)
+nstates(r::SCIResult) = length(r.λ)
 
-function prepare_lindblad_cache(L::Lindbladian{N}) where {N}
-    return [(Li, Li' * Li) for Li in L.L]
+function Base.show(io::IO, ::MIME"text/plain", r::SCIResult{K}) where K
+    @printf(io, "SCIResult{%s}: dim P = %d, %d states, iteration %d%s\n", nameof(K), length(r),
+            nstates(r), r.iteration, r.converged ? " (converged)" : "")
+    for (i, λ) in enumerate(r.λ)
+        @printf(io, "  λ[%d] = % .10f %+.10fi\n", i, real(λ), imag(λ))
+    end
 end
 
-function multiply(L::Lindbladian{N}, ρ::SparseDyadVectors{N,T}; ϵ=1e-16) where {N,T}
-    σ = SparseDyadVectors{N,T}()
+"""
+    selected_ci(L, init, R; basis=DyadBasis, ϵ_add=1e-2, ϵ_clip=1e-4, max_iter=10,
+                selection=:amplitude, dense_max=3000, callback=nothing, verbose=true)
 
-    L_dat = prepare_lindblad_cache(L)
-    # Unitary part
-    for (rdyad, rcoeffs) in ρ
-        σi = DyadSum(N)
-        σi += -1im * (L.H * rdyad - rdyad * L.H)
+Selected-CI for the `R` slowest eigenmodes of the Lindbladian `L`.
 
-        for i in 1:length(L.γ)
-            # Li = L.L[i]
-            # LL = Li' * Li
-            Li, LL = L_dat[i]
-            
-            σi +=  L.γ[i] * (Li * rdyad * Li')
-            σi -= 0.5*L.γ[i]*(LL*rdyad + rdyad*LL)
+Start from the keys of `init` (any PauliOperators operator, e.g. `Dyad(N,0,0)`, expanded in
+`basis`). Each iteration:
+1. **clip**: drop keys whose largest eigenvector amplitude is below `ϵ_clip`;
+2. **expand**: add every external key `q` whose amplitude exceeds `ϵ_add`;
+   the amplitude is `|(L V)_q|` for `selection=:amplitude`, or the first-order
+   perturbative estimate `|(L V)_q / (λ − L_qq)|` for `selection=:perturbative`;
+3. **diagonalize** `L_PP`, keeping the `R` eigenvalues with largest real part and their
+   biorthogonal left/right eigenvectors.
+
+Stops when the space no longer changes. `callback(result::SCIResult)` is called after every
+iteration (e.g. to record convergence or apply a Löwdin correction per iteration).
+
+Defaults reproduce the old `selected_ci(…; ϵdiscard=1e-4)`.
+"""
+function selected_ci(Λ::Lindbladian{N}, init, R::Integer; basis::Type=DyadBasis,
+                     ϵ_add=1e-2, ϵ_clip=1e-4, max_iter=10, selection::Symbol=:amplitude,
+                     dense_max=3000, callback=nothing, verbose=true) where N
+    selection in (:amplitude, :perturbative) || throw(ArgumentError("selection must be :amplitude or :perturbative"))
+    K = basis{N}
+    t = SuperOpTerms(Λ)
+
+    c0 = coefficients(basis, init)
+    P = collect(keys(c0))::Vector{K}
+    V = reshape(normalize([c0[k] for k in P]), :, 1)
+    λ = ComplexF64[]
+    res = nothing
+    verbose && @printf(" %5s %8s %22s %10s\n", "iter", "dim P", "λ[min(2,R)]", "dim Q")
+
+    for it in 1:max_iter
+        # 1. clip
+        keep = [maximum(abs, @view V[i, :]) > ϵ_clip for i in eachindex(P)]
+        P, V = P[keep], V[keep, :]
+        pos = Dict{K,Int}(k => i for (i, k) in enumerate(P))
+
+        # 2. expand
+        ext = external_action(t, P, pos, V)
+        newP = copy(P)
+        for (q, a) in ext
+            if selection === :perturbative && !isempty(λ)
+                a = a ./ (λ[1:length(a)] .- diag_element(t, q))
+            end
+            maximum(abs, a) > ϵ_add && push!(newP, q)
         end
-        
-        for (ldyad,lcoeff) in σi 
-            sum!(σ, ldyad, lcoeff .* rcoeffs )
+
+        if res !== nothing && length(newP) == length(res.basis) && Set(newP) == Set(res.basis)
+            res = SCIResult{K}(res.basis, res.pos, res.λ, res.V, res.W, res.iteration, true)
+            verbose && println(" converged: P space unchanged")
+            break
         end
+
+        # 3. diagonalize L_PP
+        P = newP
+        pos = Dict{K,Int}(k => i for (i, k) in enumerate(P))
+        Lpp = subspace_matrix(t, P)
+        λ, V, W = biorthogonal_eigen(Lpp, R; dense_max=dense_max)
+        res = SCIResult{K}(P, pos, λ, V, W, it, false)
+        verbose && @printf(" %5d %8d % .10f%+.10fi %10d\n", it, length(P),
+                           real(λ[min(2, end)]), imag(λ[min(2, end)]), length(ext))
+        callback === nothing || callback(res)
     end
-    return σ 
+    return res
 end
-
-
-function selected_ci_first_correction(L::Lindbladian{N}, v::SparseDyadVectors{N,T}; 
-    ϵsearch=1e-1, ϵdiscard=1e-4, max_iter_outer=4, thresh_conv=1e-7,
-    verbose = 0) where {N,T}
-
-    dim, R = size(v)
-    # display(v)
-    # @show size(v)
-    last = deepcopy(v)
-
-    Pv= deepcopy(v)
-    e = 0
-    # v = 
-    for n_iter in 1:max_iter_outer
-        @printf("\n ####################################")
-        @printf("\n SCI Iteration: %4i \n", n_iter)
-        clip!(Pv, thresh=ϵdiscard)
-
-        display("P---DYAD")
-        display(size(Pv))
-        σ = multiply(L, Pv, ϵ=ϵsearch)
-
-        v = zeros(T,size(Pv))
-
-        x_dyad = SparseDyadVectors(DyadSum(N), R=R)
-        # This represents |q>><<q|L|v_i>>
-        for (d, coeff) in σ
-            if !haskey(Pv, d)
-                sum!(x_dyad, d, coeff)
-            end
-        end
-
-        if n_iter > 1
-            for (d, c) in x_dyad
-                one_x_dyad = SparseDyadVectors(DyadSum(d), R = R)
-                one_x_dyad[d] = c
-                temp = L * one_x_dyad
-
-                Lxx = conj.(c) .* temp[d]
-
-                x_dyad[d] = c ./ (Lxx .- e )
-
-            end
-        end
-
-        for (d,c) in x_dyad
-            if maximum(abs2.(c)) > ϵdiscard
-                sum!(Pv, d, zeros(T, R))
-            else
-            end
-        end
-        
-        println("NEW-PDYAD")
-        display(size(Pv))
-        Lmat = build_subspace_L(L, Pv)
-
-        # println()
-        # display(size(Pv))
-        if length(Pv) < 3000
-            e,v = eigen(Lmat)
-            # e = e[end-R+1:end]
-            # v = v[:, end-R+1:end]
-            perm = sortperm(real(e))
-            e = e[perm[end-R+1:end]]
-            v = v[:, perm[end-R+1:end]]
-            
-            println("Eigen")
-        else
-            e,v = eigs(Lmat, nev=R, v0=Matrix(Pv)[:,1], which=:LR, maxiter=3000 , tol=1e-5, check=1)
-            println("Eigs")
-            perm = sortperm(real(e))
-            e = e[perm]
-            v = v[:, perm]
-        end
-        
-        
-        fill!(Pv, v)
-        if verbose > 1
-            display(Pv'*last)
-        end
-
-        ovlap = Pv'*last
-
-        # @printf("Eigenvalues of Lmat:\n")
-        # # display(e)
-        # # println("############")
-        # for i in eachindex(e)
-        #     @printf(" %4i % 12.8f % 12.8fi Δ = %12.8f\n", i, real(e[i]), imag(e[i]), abs(ovlap[i,i]))
-        # end
-
-
-        if length(Pv) == length(last)
-            tmp1 = Matrix(Pv)
-
-            tmp2 = Matrix(last)
-            ovlap = pinv(tmp1)*tmp2
-            if abs(1 - det(ovlap)) < thresh_conv 
-                @printf(" *Converged\n")
-                break
-            end
-        end
-        
-        last = deepcopy(Pv)
-    end
-    return Pv, e
-end
-
-
-function Base.:*(L::Lindbladian{N}, ρ::SparseDyadVectors{N,T}) where {N,T}
-    return multiply(L,ρ)
-end
-
-function build_subspace_L(L::Lindbladian{N}, v::SparseDyadVectors{N,T}) where {N,T}
-   
-    indices = Dict{DyadBasis{N}, Int}()
-    idx = 1
-    for (d,c) in v
-        indices[d] = idx
-        idx += 1
-    end
-
-    dim = length(v)
-    
-    Lmat = zeros(T, dim, dim)
-
-    vi = 0
-    # Unitary part
-    for rdyad in keys(v)
-        vi = indices[rdyad] 
-
-        for (pauli, coefficient) in L.H
-            
-            ldyad = coefficient * (pauli * rdyad)
-            if haskey(v, DyadBasis(ldyad)) 
-                Lmat[indices[DyadBasis(ldyad)], vi] += -1im * coeff(ldyad)
-            end
-            
-            ldyad = coefficient * (rdyad * pauli)
-            if haskey(v, DyadBasis(ldyad)) 
-                Lmat[indices[DyadBasis(ldyad)], vi] += 1im * coeff(ldyad)
-            end
-        end
-
-        
-        for i in 1:length(L.γ)
-            γ = L.γ[i]
-            for (pj, cj) in L.L[i]
-                for (pk, ck) in L.L[i]
-                    Pj = pj * cj
-                    Pk = pk * ck
-
-                    ldyad = γ * (Pj * rdyad * Pk')
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] += coeff(ldyad)
-                    end
-                    
-                    ldyad = γ * (rdyad * Pj' * Pk)
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
-                    end
-                    
-                    ldyad = γ * (Pj' * Pk * rdyad)
-                    if haskey(v, DyadBasis(ldyad)) 
-                        Lmat[indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
-                    end
-                end
-            end
-        end
-    end
-    return Lmat 
-end
-
-function build_subspace_L_generalized(L::Lindbladian{N}, v_row::SparseDyadVectors{N,T}, v_col::SparseDyadVectors{N, T}) where {N,T}
-    row_indices = Dict{DyadBasis{N}, Int}()
-    col_indices = Dict{DyadBasis{N}, Int}()
-
-    for (i, (d,c)) in enumerate(v_row)
-        row_indices[d] = i
-    end
-
-    for (j, (d, c)) in enumerate(v_col)
-        col_indices[d] = j
-    end
-
-    row_dim = length(v_row)
-    col_dim = length(v_col)
-    
-    Lmat = zeros(T, row_dim, col_dim)
-
-    vi = 0
-    # Unitary part
-    for rdyad in keys(v_col)
-        vi = col_indices[rdyad] 
-
-        for (pauli, coefficient) in L.H
-            
-            ldyad = coefficient * (pauli * rdyad)
-            if haskey(row_indices, DyadBasis(ldyad)) 
-                Lmat[row_indices[DyadBasis(ldyad)], vi] += -1im * coeff(ldyad)
-            end
-            
-            ldyad = coefficient * (rdyad * pauli)
-            if haskey(row_indices, DyadBasis(ldyad)) 
-                Lmat[row_indices[DyadBasis(ldyad)], vi] += 1im * coeff(ldyad)
-            end
-        end
-
-        # Dissipation part
-        for i in 1:length(L.γ)
-            γ = L.γ[i]
-            for (pj, cj) in L.L[i]
-                for (pk, ck) in L.L[i]
-                    Pj = pj * cj
-                    Pk = pk * ck
-
-                    ldyad = γ * (Pj * rdyad * Pk')
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] += coeff(ldyad)
-                    end
-                    
-                    ldyad = γ * (rdyad * Pj' * Pk)
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
-                    end
-                    
-                    ldyad = γ * (Pj' * Pk * rdyad)
-                    if haskey(row_indices, DyadBasis(ldyad)) 
-                        Lmat[row_indices[DyadBasis(ldyad)], vi] -= .5 * coeff(ldyad)
-                    end
-                end
-            end
-        end
-    end
-    return Lmat 
-end
-
-
-function Base.fill!(sdv::SparseDyadVectors{N,T}, m::Matrix{T}) where {N,T}
-    size(sdv) == size(m) || throw(DimensionMismatch)
-
-    ridx = 0
-    for (d,coeffs) in sdv
-        ridx += 1
-        sdv[d] .= m[ridx,:]
-    end
-    return sdv
-end
-
-function PauliOperators.clip!(sdv::SparseDyadVectors; thresh=1e-5)
-    filter!(p->maximum(abs2.(p.second)) > thresh, sdv)
-    return sdv
-end
-
-
-# function sparse_lindbladian_eigensolve(L::Lindbladian, v0::SparseDyadVectors)
-#     Lmat = Matrix(L)
-#     l = eigvals(Lmat)
-#     @printf("\n Eigenvalues of Lmat:\n")
-#     for i in 1:length(l)
-#         @printf(" %4i % 12.8f % 12.8fi\n", i, real(l[i]), imag(l[i]))
-#     end
-# end
