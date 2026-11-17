@@ -38,7 +38,7 @@ end
 Selected-CI for the `R` slowest eigenmodes of the Lindbladian `L`.
 
 Start from the keys of `init` (any PauliOperators operator, e.g. `Dyad(N,0,0)`, expanded in
-`basis`). Each iteration:
+`basis`), or from a vector of such operators, each giving one starting column. Each iteration:
 1. **clip**: drop keys whose largest eigenvector amplitude is below `ϵ_clip`;
 2. **expand**: add every external key `q` whose amplitude exceeds `ϵ_add`;
    the amplitude is `|(L V)_q|` for `selection=:amplitude`, or the first-order
@@ -58,9 +58,9 @@ function selected_ci(Λ::Lindbladian{N}, init, R::Integer; basis::Type=DyadBasis
     K = basis{N}
     t = SuperOpTerms(Λ)
 
-    c0 = coefficients(basis, init)
-    P = collect(keys(c0))::Vector{K}
-    V = reshape(normalize([c0[k] for k in P]), :, 1)
+    seeds = [coefficients(basis, x) for x in (init isa AbstractVector ? init : [init])]
+    P = unique(K[k for c in seeds for k in keys(c)])
+    V = reduce(hcat, [normalize([get(c, k, 0.0im) for k in P]) for c in seeds])
     λ = ComplexF64[]
     res = nothing
     verbose && @printf(" %5s %8s %22s %10s\n", "iter", "dim P", "λ[min(2,R)]", "dim Q")

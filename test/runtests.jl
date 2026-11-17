@@ -28,6 +28,7 @@ closest(a, b) = maximum(minimum(abs.(x .- b)) for x in a)   # spectra as sets
             keys = _all_keys(basis, N)
             M = Matrix(L, basis)
             @test Matrix(subspace_matrix(L, keys)) ≈ M atol = 1e-12
+            @test Matrix(sparse(L, basis)) ≈ M atol = 1e-12
             @test [diag_element(t, k) for k in keys] ≈ diag(M) atol = 1e-12
         end
     end
@@ -81,6 +82,9 @@ end
         @test closest(res.λ, λex) < 1e-8
         @test norm(res.W * res.V - I) < 1e-10
     end
+    # several seed operators, one starting column each
+    res = selected_ci(L, [Dyad(N, 0, 0), Dyad(N, 0, 1), Dyad(N, 1, 0)], 2; verbose=false)
+    @test closest(res.λ, λex) < 1e-8
     iters = Int[]
     selected_ci(L, Dyad(N, 0, 0), 2; verbose=false, callback=r -> push!(iters, r.iteration))
     @test iters == 1:length(iters)

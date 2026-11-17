@@ -76,6 +76,14 @@ function subspace_matrix(t::SuperOpTerms, rows::AbstractVector{K}, cols::Abstrac
 end
 
 """
+    sparse(L::Lindbladian, basis=DyadBasis) -> SparseMatrixCSC
+
+Full `4^N × 4^N` superoperator, same ordering as `Matrix(L, basis)`, for iterative solvers.
+"""
+SparseArrays.sparse(Λ::Lindbladian{N}, basis::Type=DyadBasis) where N =
+    subspace_matrix(Λ, _all_keys(basis, N))
+
+"""
     external_action(t, P, pos, V) -> Dict{key, Vector}
 
 `(L V)_q` for every key `q` reachable from the space `P` but not in it (the Q space),

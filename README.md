@@ -35,6 +35,7 @@ propagate(res, Pauli(N, Z=[2, 3]), Dyad(N, 0, 0), 0:0.1:5)
 | `src/dynamics.jl` | `propagate`, `propagate_exact` |
 | `test/` | `julia --project -e 'using Pkg; Pkg.test()'` (~20 s) |
 | `examples/` | plot scripts with their own environment (Plots), figures go to `examples/figures/` |
+| `apps/` | larger runs (own environment): `heis_1d.jl` (N = 8 SCI), `heis_1d_exact.jl` (Arnoldi reference), `spin_boson/` |
 
 ```bash
 julia --project=examples -e 'using Pkg; Pkg.instantiate()'

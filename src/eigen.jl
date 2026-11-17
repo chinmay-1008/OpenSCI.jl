@@ -55,8 +55,9 @@ function _krylov_eigs(A, R)
     n = size(A, 1)
     x0 = normalize!(randn(ComplexF64, n))
     howmany = min(R + 4, n)
-    vals, vecs, info = KrylovKit.eigsolve(A, x0, howmany, :LR;
+    # a few spare pairs help resolve clusters at the cut; only the R kept ones must converge
+    vals, vecs, info = KrylovKit.eigsolve(A, x0, howmany, :LR; verbosity=0,
                                           krylovdim=max(30, 2howmany + 10), tol=1e-12, maxiter=500)
-    info.converged < R && @warn "Arnoldi: only $(info.converged) of $R eigenpairs converged"
+    info.converged < R && @warn "Arnoldi: only $(info.converged) of $R eigenpairs converged (residuals $(info.normres[1:R]))"
     return vals, reduce(hcat, vecs)
 end
