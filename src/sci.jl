@@ -33,52 +33,92 @@ end
 
 """
     selected_ci(L, init, R; basis=DyadBasis, ϵ_add=1e-2, ϵ_clip=1e-4, max_iter=10,
-                selection=:amplitude, dense_max=3000, callback=nothing, verbose=true)
+                selection=:amplitude, two_sided=false, keep_seeds=true, dense_max=3000,
+                callback=nothing, verbose=true)
 
 Selected-CI for the `R` slowest eigenmodes of the Lindbladian `L`.
 
 Start from the keys of `init` (any PauliOperators operator, e.g. `Dyad(N,0,0)`, expanded in
-`basis`), or from a vector of such operators, each giving one starting column. Each iteration:
-1. **clip**: drop keys whose largest eigenvector amplitude is below `ϵ_clip`;
-2. **expand**: add every external key `q` whose amplitude exceeds `ϵ_add`;
-   the amplitude is `|(L V)_q|` for `selection=:amplitude`, or the first-order
-   perturbative estimate `|(L V)_q / (λ − L_qq)|` for `selection=:perturbative`;
+`basis`; for a [`MatrixLindbladian`](@ref), a density matrix or a `(ket, bra)` index pair),
+or from a vector of such seeds, each giving one starting column. Each iteration:
+1. **clip**: drop keys whose largest eigenvector amplitude is below `ϵ_clip` (seed keys are
+   never dropped when `keep_seeds=true`: seeding with all populations `|i⟩⟨i|` keeps the
+   trace functional inside P, so `L_PP` conserves probability and the steady state stays at 0);
+2. **expand**: add every external key `q` whose score exceeds `ϵ_add`;
 3. **diagonalize** `L_PP`, keeping the `R` eigenvalues with largest real part and their
    biorthogonal left/right eigenvectors.
+
+Scores of an external key `q`, with `vᵢ` the right eigenvectors (unit norm) and `wᵢ` the left
+ones (`wᵢ vᵢ = 1`), maximized over the states `i`:
+- `selection=:amplitude`: `|(L vᵢ)_q|`
+- `selection=:perturbative`: the first-order amplitude `|(L vᵢ)_q / (λᵢ − L_qq)|`
+- `selection=:pt2`: the second-order eigenvalue shift that `q` would bring,
+  `|(wᵢ L)_q (L vᵢ)_q / (λᵢ − L_qq)|` (the term `q` contributes to [`lowdin_correction`](@ref));
+  it has units of a rate, so `ϵ_add` is typically much smaller (≈ 1e-6).
+
+Right eigenvectors alone decide which keys enter P for the first two, but in a non-normal
+`L` the left eigenvectors can live elsewhere. `two_sided=true` also scores the left
+eigenvectors, normalized to unit norm (`|(ŵᵢ L)_q|`, or divided by `λᵢ − L_qq`), and clips a
+key only when it is small in both. `:pt2` uses both sides by construction and clips like
+`two_sided`.
 
 Stops when the space no longer changes. `callback(result::SCIResult)` is called after every
 iteration (e.g. to record convergence or apply a Löwdin correction per iteration).
 
 Defaults reproduce the old `selected_ci(…; ϵdiscard=1e-4)`.
 """
-function selected_ci(Λ::Lindbladian{N}, init, R::Integer; basis::Type=DyadBasis,
+function selected_ci(Λ::AbstractLindbladian, init, R::Integer; basis::Type=DyadBasis,
                      ϵ_add=1e-2, ϵ_clip=1e-4, max_iter=10, selection::Symbol=:amplitude,
-                     dense_max=3000, callback=nothing, verbose=true) where N
-    selection in (:amplitude, :perturbative) || throw(ArgumentError("selection must be :amplitude or :perturbative"))
-    K = basis{N}
-    t = SuperOpTerms(Λ)
+                     two_sided::Bool=false, keep_seeds=true, dense_max=3000, callback=nothing,
+                     verbose=true)
+    selection in (:amplitude, :perturbative, :pt2) ||
+        throw(ArgumentError("selection must be :amplitude, :perturbative or :pt2"))
+    left = two_sided || selection === :pt2
+    K = _keytype(Λ, basis)
+    t = _terms(Λ)
 
-    seeds = [coefficients(basis, x) for x in (init isa AbstractVector ? init : [init])]
+    seeds = [coefficients(_basis_type(K), x) for x in (init isa AbstractVector ? init : [init])]
     P = unique(K[k for c in seeds for k in keys(c)])
     V = reduce(hcat, [normalize([get(c, k, 0.0im) for k in P]) for c in seeds])
+    W = zeros(ComplexF64, 0, length(P))      # no left eigenvectors before the first diagonalization
+    protected = keep_seeds ? Set(P) : Set{K}()
     λ = ComplexF64[]
     res = nothing
     verbose && @printf(" %5s %8s %22s %10s\n", "iter", "dim P", "λ[min(2,R)]", "dim Q")
 
     for it in 1:max_iter
-        # 1. clip
-        keep = [maximum(abs, @view V[i, :]) > ϵ_clip for i in eachindex(P)]
-        P, V = P[keep], V[keep, :]
+        # 1. clip (seed keys are kept when keep_seeds); two-sided: small in V and in Ŵ
+        Ŵ = W ./ norm.(eachrow(W))
+        keep = map(eachindex(P)) do i
+            P[i] in protected && return true
+            a = maximum(abs, @view V[i, :])
+            left && !isempty(W) && (a = max(a, maximum(abs, @view Ŵ[:, i])))
+            return a > ϵ_clip
+        end
+        P, V, W, Ŵ = P[keep], V[keep, :], W[:, keep], Ŵ[:, keep]
         pos = Dict{K,Int}(k => i for (i, k) in enumerate(P))
 
         # 2. expand
         ext = external_action(t, P, pos, V)
+        extL = left && !isempty(W) ?
+               external_left_action(t, P, pos, selection === :pt2 ? W : Ŵ) : empty(ext)
+        nR = size(V, 2)
+        zR = zeros(ComplexF64, nR)
+        function score(q, aR, aL)
+            (selection === :amplitude || isempty(λ)) && return max(maximum(abs, aR), maximum(abs, aL))
+            d = λ[1:nR] .- diag_element(t, q)
+            selection === :pt2 && return maximum(abs, aL .* aR ./ d)
+            return max(maximum(abs, aR ./ d), maximum(abs, aL ./ d))
+        end
         newP = copy(P)
-        for (q, a) in ext
-            if selection === :perturbative && !isempty(λ)
-                a = a ./ (λ[1:length(a)] .- diag_element(t, q))
-            end
-            maximum(abs, a) > ϵ_add && push!(newP, q)
+        for (q, aR) in ext
+            score(q, aR, get(extL, q, zR)) > ϵ_add && push!(newP, q)
+        end
+        nQ = length(ext)
+        for (q, aL) in extL                  # keys only the left eigenvectors reach
+            haskey(ext, q) && continue
+            nQ += 1
+            score(q, zR, aL) > ϵ_add && push!(newP, q)
         end
 
         if res !== nothing && length(newP) == length(res.basis) && Set(newP) == Set(res.basis)
@@ -94,7 +134,7 @@ function selected_ci(Λ::Lindbladian{N}, init, R::Integer; basis::Type=DyadBasis
         λ, V, W = biorthogonal_eigen(Lpp, R; dense_max=dense_max)
         res = SCIResult{K}(P, pos, λ, V, W, it, false)
         verbose && @printf(" %5d %8d % .10f%+.10fi %10d\n", it, length(P),
-                           real(λ[min(2, end)]), imag(λ[min(2, end)]), length(ext))
+                           real(λ[min(2, end)]), imag(λ[min(2, end)]), nQ)
         callback === nothing || callback(res)
     end
     return res

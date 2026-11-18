@@ -1,3 +1,10 @@
+# Every Lindbladian backend provides:
+#   _terms(Λ)           an AbstractTerms object implementing foreach_image(f, t, key)
+#   _keytype(Λ, basis)  the basis-key type the SCI works with
+#   _all_keys(Λ, basis) all keys in vectorization order (for dense references)
+abstract type AbstractLindbladian end
+abstract type AbstractTerms end
+
 """
     Lindbladian{N}
 
@@ -7,7 +14,7 @@
 - `L::Vector{PauliSum}`: jump operators
 - `γ::Vector{Float64}`: rates
 """
-struct Lindbladian{N}
+struct Lindbladian{N} <: AbstractLindbladian
     H::PauliSum{N,ComplexF64}
     L::Vector{PauliSum{N,ComplexF64}}
     γ::Vector{Float64}
@@ -118,7 +125,7 @@ end
 are merged (e.g. depolarizing `Lₖ†Lₖ = I` collapses to a constant). Acting on one basis key
 is then a single Pauli product per term, the same code for dyads and Pauli strings.
 """
-struct SuperOpTerms{N}
+struct SuperOpTerms{N} <: AbstractTerms
     c::Vector{ComplexF64}
     A::Vector{PauliBasis{N}}
     B::Vector{PauliBasis{N}}
@@ -148,6 +155,13 @@ end
 
 Base.length(t::SuperOpTerms) = length(t.c)
 
+# L†(X) = Σₜ cₜ* Aₜ X Bₜ (Pauli strings are Hermitian); its matrix is the conjugate transpose
+_adjoint(t::SuperOpTerms{N}) where N = SuperOpTerms{N}(conj.(t.c), t.A, t.B)
+
+_terms(Λ::Lindbladian) = SuperOpTerms(Λ)
+_keytype(::Lindbladian{N}, basis::Type) where N = basis{N}
+_all_keys(::Lindbladian{N}, basis::Type) where N = _all_keys(basis, N)
+
 _isid(p::PauliBasis) = p.z == 0 && p.x == 0
 _elem(b::PauliBasis) = Pauli(b)
 _elem(b::DyadBasis) = Dyad(b)
@@ -171,7 +185,7 @@ Call `f(key, value)` for every term of `L(b)` (duplicates not merged), where `b`
 end
 
 """Diagonal element `⟨⟨b|L|b⟩⟩`."""
-function diag_element(t::SuperOpTerms, b)
+function diag_element(t::AbstractTerms, b)
     s = 0.0im
     foreach_image((k, c) -> (k == b && (s += c)), t, b)
     return s

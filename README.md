@@ -30,7 +30,7 @@ propagate(res, Pauli(N, Z=[2, 3]), Dyad(N, 0, 0), 0:0.1:5)
 | `src/lindbladian.jl` | `Lindbladian`, noise channels, `SuperOpTerms` (L as Pauli sandwiches), `Matrix(L, basis)` |
 | `src/basis.jl` | basis conversion, `subspace_matrix` (L_PP, L_PQ, …) |
 | `src/eigen.jl` | top-R eigenpairs with biorthogonal left eigenvectors (`W*V = I`, no `pinv`) |
-| `src/sci.jl` | `selected_ci` (amplitude or first-order selection, per-iteration callback) |
+| `src/sci.jl` | `selected_ci` (amplitude, first-order or PT2 selection, optionally two-sided; per-iteration callback) |
 | `src/lowdin.jl` | `lowdin_correction` with intruder-state diagnostics |
 | `src/dynamics.jl` | `propagate`, `propagate_exact` |
 | `test/` | `julia --project -e 'using Pkg; Pkg.test()'` (~20 s) |
@@ -42,4 +42,16 @@ julia --project=examples -e 'using Pkg; Pkg.instantiate()'
 julia --project=examples examples/lowdin_convergence.jl 4 dyad
 julia --project=examples examples/dynamics.jl 3 10 pauli
 julia --project=examples examples/spectrum.jl 3 10
+julia --project=examples examples/westhoff_bose_hubbard.jl   # Figs. 2(b), 4 of Westhoff et al., PRX 16, 041020
+julia --project=examples examples/selection_comparison.jl    # error vs dim P: right-only, two-sided, PT2 selection
 ```
+
+Selection rules: by default a key enters P when the right eigenvectors reach it (`|(L v)_q| > ϵ_add`).
+In a non-normal L the left eigenvectors can live elsewhere: `two_sided=true` also scores them, and
+`selection=:pt2` scores a key by the Löwdin term it would add, `|(w L)_q (L v)_q / (λ − L_qq)|`
+(a rate, so `ϵ_add ≈ 1e-4`).
+
+Models that are awkward as Pauli strings (bosons) use `MatrixLindbladian`: H and jumps as sparse
+matrices over a chosen basis, SCI keys are `(ket, bra)` pairs. `dissipative_bose_hubbard(L, N;
+basis=:momentum)` builds the driven Bose-Hubbard chain in the standing-wave Fock basis, where its
+slow modes are compact.

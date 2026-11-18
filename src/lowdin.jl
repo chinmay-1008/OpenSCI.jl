@@ -14,8 +14,8 @@ Near-degenerate denominators (intruder states) make the series blow up. Terms wi
 
 Returns `(λ, Δ, nQ, min_denominator, n_skipped)` with per-state vectors.
 """
-function lowdin_correction(Λ::Lindbladian, res::SCIResult; ϵ_denom=0.0)
-    t = SuperOpTerms(Λ)
+function lowdin_correction(Λ::AbstractLindbladian, res::SCIResult; ϵ_denom=0.0)
+    t = _terms(Λ)
     R = nstates(res)
     ext = external_action(t, res.basis, res.pos, res.V)    # q => (L_qP V)
     Δ = zeros(ComplexF64, R)

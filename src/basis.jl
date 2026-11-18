@@ -58,9 +58,9 @@ _trace_with(O, key) = _trace_with(O isa Union{Pauli,PauliBasis} ? PauliSum(O) : 
 `⟨⟨rᵢ|L|cⱼ⟩⟩` for basis keys `rows`, `cols` (vectors of `DyadBasis` or `PauliBasis`).
 `L` may be a `Lindbladian` or precomputed `SuperOpTerms`.
 """
-subspace_matrix(Λ::Lindbladian, rows, cols=rows) = subspace_matrix(SuperOpTerms(Λ), rows, cols)
+subspace_matrix(Λ::AbstractLindbladian, rows, cols=rows) = subspace_matrix(_terms(Λ), rows, cols)
 
-function subspace_matrix(t::SuperOpTerms, rows::AbstractVector{K}, cols::AbstractVector{K}=rows) where K
+function subspace_matrix(t::AbstractTerms, rows::AbstractVector{K}, cols::AbstractVector{K}=rows) where K
     rpos = Dict{K,Int}(k => i for (i, k) in enumerate(rows))
     I, J, V = Int[], Int[], ComplexF64[]
     for (j, b) in enumerate(cols)
@@ -76,12 +76,12 @@ function subspace_matrix(t::SuperOpTerms, rows::AbstractVector{K}, cols::Abstrac
 end
 
 """
-    sparse(L::Lindbladian, basis=DyadBasis) -> SparseMatrixCSC
+    sparse(L, basis=DyadBasis) -> SparseMatrixCSC
 
-Full `4^N × 4^N` superoperator, same ordering as `Matrix(L, basis)`, for iterative solvers.
+Full superoperator (`4^N × 4^N`, or `d² × d²` for a `MatrixLindbladian`), same ordering
+as `Matrix(L, basis)` / `vec(ρ)`, for iterative solvers.
 """
-SparseArrays.sparse(Λ::Lindbladian{N}, basis::Type=DyadBasis) where N =
-    subspace_matrix(Λ, _all_keys(basis, N))
+SparseArrays.sparse(Λ::AbstractLindbladian, basis::Type=DyadBasis) = subspace_matrix(Λ, _all_keys(Λ, basis))
 
 """
     external_action(t, P, pos, V) -> Dict{key, Vector}
@@ -89,15 +89,28 @@ SparseArrays.sparse(Λ::Lindbladian{N}, basis::Type=DyadBasis) where N =
 `(L V)_q` for every key `q` reachable from the space `P` but not in it (the Q space),
 for each column of `V` (`length(P) × R`).
 """
-function external_action(t::SuperOpTerms, P::AbstractVector{K}, pos::Dict{K,Int}, V::AbstractMatrix) where K
-    R = size(V, 2)
+external_action(t::AbstractTerms, P::AbstractVector, pos::Dict, V::AbstractMatrix) =
+    _external(t, P, pos, V, identity)
+
+"""
+    external_left_action(t, P, pos, W) -> Dict{key, Vector}
+
+`(W L)_q = Σ_p W[:, p] L_pq` for every key `q` outside `P` that `L` maps into `P` (the keys
+a left eigenvector leaks into), for each row of `W` (`R × length(P)`). Uses the adjoint
+terms, since `L_pq = conj((L†)_qp)`.
+"""
+external_left_action(t::AbstractTerms, P::AbstractVector, pos::Dict, W::AbstractMatrix) =
+    _external(_adjoint(t), P, pos, permutedims(W), conj)
+
+function _external(t::AbstractTerms, P::AbstractVector{K}, pos::Dict{K,Int}, X::AbstractMatrix, f::F) where {K,F}
+    R = size(X, 2)
     out = Dict{K,Vector{ComplexF64}}()
     for (j, b) in enumerate(P)
-        vj = @view V[j, :]
+        xj = @view X[j, :]
         foreach_image(t, b) do k, c
             haskey(pos, k) && return
             acc = get!(() -> zeros(ComplexF64, R), out, k)
-            acc .+= c .* vj
+            acc .+= f(c) .* xj
         end
     end
     # drop keys whose couplings cancel exactly (e.g. commuting Hamiltonian terms in the Pauli basis)

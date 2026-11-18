@@ -16,6 +16,7 @@ using Printf
 import KrylovKit
 
 include("lindbladian.jl")
+include("matrix_lindbladian.jl")
 include("models.jl")
 include("basis.jl")
 include("eigen.jl")
@@ -25,7 +26,8 @@ include("dynamics.jl")
 
 export Lindbladian, add_hamiltonian!
 export add_channel_dephasing!, add_channel_depolarizing!, add_channel_amplitude_damping!
-export heisenberg_1D
+export MatrixLindbladian, change_basis
+export heisenberg_1D, dissipative_bose_hubbard, fock_basis, hopping, fock_rotation, standing_waves
 export SuperOpTerms, subspace_matrix, coefficients
 export SCIResult, selected_ci
 export lowdin_correction
